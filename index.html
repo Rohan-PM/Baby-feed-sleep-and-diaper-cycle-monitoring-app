@@ -1,0 +1,732 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+<title>Twin Feed Monitor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.0/dist/umd/supabase.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+<style>
+  :root{
+    --cream:#FBF8F2; --paper:#fff; --line:#E8E1D4; --mute:#8A8578; --ink:#33302A;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{background:var(--cream); color:var(--ink); font-family:'Nunito',system-ui,sans-serif; -webkit-tap-highlight-color:transparent}
+  .fr{font-family:'Fraunces',Georgia,serif}
+  button{cursor:pointer; font-family:inherit}
+  a{color:inherit}
+  .tap{transition:transform .06s ease}
+  .tap:active{transform:scale(.97)}
+  @media (prefers-reduced-motion:reduce){.tap{transition:none}}
+  input:focus,button:focus-visible,select:focus{outline:2px solid var(--ink); outline-offset:2px}
+  input,select{font-family:inherit}
+  .wrap{max-width:900px; margin:0 auto; padding:20px 16px 90px}
+  .card{background:var(--paper); border:1px solid var(--line); border-radius:18px; padding:18px; box-shadow:0 1px 2px rgba(60,50,30,.03)}
+  .grid{display:grid; gap:14px}
+  .hide{display:none !important}
+  h1.title{font-size:28px; font-weight:600; letter-spacing:-.02em; margin:0}
+  .sub{margin:2px 0 0; color:var(--mute); font-size:14px}
+  .tabs{display:flex; gap:4px; background:var(--paper); padding:4px; border-radius:14px; border:1px solid var(--line)}
+  .tabbtn{border:none; border-radius:10px; padding:8px 16px; font-size:14px; font-weight:700; background:transparent; color:var(--mute)}
+  .tabbtn.on{background:var(--ink); color:var(--cream)}
+  .chip{border:1px solid var(--line); background:var(--paper); color:var(--ink); border-radius:999px; padding:6px 12px; font-size:13px; font-weight:700}
+  .chip.on{border-color:var(--ink); background:var(--ink); color:var(--cream)}
+  .lbl{display:block; font-size:13px; font-weight:700; color:var(--mute); margin-bottom:5px}
+  .inp{width:100%; font-size:16px; padding:10px 12px; border-radius:10px; border:1.5px solid var(--line); font-weight:600; color:var(--ink)}
+  .metricv{font-size:22px; font-weight:600; line-height:1.1}
+  .metricl{font-size:12px; color:var(--mute); font-weight:600}
+  .row{display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:10px}
+  .dot{width:12px; height:12px; border-radius:999px; flex:none}
+  .btn-primary{border:none; border-radius:12px; padding:12px; font-weight:800; font-size:15px; color:#fff}
+  .btn-ghost{border:1px solid var(--line); border-radius:12px; padding:12px 14px; font-weight:700; font-size:13px; background:var(--paper); color:var(--ink)}
+  .sheet-bg{position:fixed; inset:0; background:rgba(30,28,24,.35); display:flex; align-items:flex-end; justify-content:center; z-index:50}
+  .sheet{background:var(--paper); width:100%; max-width:440px; border-radius:20px 20px 0 0; padding:22px; box-shadow:0 -8px 40px rgba(0,0,0,.15)}
+  .disc{color:var(--mute); font-size:12px; line-height:1.6}
+  .banner{margin-top:10px; border-radius:10px; padding:8px 12px; font-size:13px; font-weight:700; text-align:center}
+  .chart-box{position:relative; width:100%}
+  .hsel{border:1px solid var(--line); background:var(--paper); border-radius:10px; padding:8px 10px; font-size:14px; font-weight:700; color:var(--ink); max-width:220px}
+</style>
+</head>
+<body>
+
+<!-- ========================== CONFIG ========================== -->
+<!-- Paste your two Supabase values here. This is the ONLY thing you edit. -->
+<script>
+  window.SUPABASE_URL = "https://YOUR-PROJECT-ID.supabase.co";
+  window.SUPABASE_PUBLISHABLE_KEY = "sb_publishable_xxxxxxxxxxxxxxxxxxxx";
+</script>
+<!-- =========================================================== -->
+
+<div id="app"></div>
+
+<script>
+/* ================================================================
+   Twin Feed Monitor — single-file edition, v2 (households)
+   One account owns many households ("profile sources"). Each holds
+   its own babies + feeds. Any device on the same login sees them.
+   Plain JS + Supabase (CDN) + Chart.js (CDN). No build, no Node.
+   ================================================================ */
+
+/* ---------- Reference data (AAP-style) ---------- */
+const ML_PER_KG = { min:120, typical:150, max:180 };
+const MAX_DAILY_ML = 960;
+const AGE_BANDS = [
+  {label:"0-1 wk", max:7},   {label:"1-4 wk", max:28},
+  {label:"1-2 mo", max:60},  {label:"2-4 mo", max:120},
+  {label:"4-6 mo", max:180}, {label:"6-12 mo", max:365},
+];
+const bandFor = d => (AGE_BANDS.find(b=>d<=b.max) || AGE_BANDS[AGE_BANDS.length-1]).label;
+
+/* Up to 4 colour slots so a household can hold twins, a single, etc. */
+const SLOTS = {
+  A:{hex:"#5B8C7B", soft:"#E4EFE9", ink:"#2C4A40"},
+  B:{hex:"#C6803E", soft:"#F6E9DC", ink:"#6B4622"},
+  C:{hex:"#6E7BA6", soft:"#E6E9F2", ink:"#33406B"},
+  D:{hex:"#A65B7B", soft:"#F3E4EC", ink:"#6B2C48"},
+};
+const slotOf = b => SLOTS[b.color] || SLOTS.A;
+
+/* ---------- Utilities ---------- */
+const pad = n => String(n).padStart(2,"0");
+const fmtClock = ms => { const t=Math.max(0,Math.floor(ms/1000)); return pad(Math.floor(t/60))+":"+pad(t%60); };
+const fmtTime = iso => new Date(iso).toLocaleTimeString([], {hour:"numeric", minute:"2-digit"});
+const fmtDate = iso => new Date(iso).toLocaleDateString([], {month:"short", day:"numeric"});
+const fmtDur = m => { if(m<60) return Math.round(m)+"m"; const h=Math.floor(m/60), mm=Math.round(m%60); return mm? h+"h "+mm+"m" : h+"h"; };
+const dayKey = iso => new Date(iso).toLocaleDateString("en-CA");
+const ageDays = dob => !dob ? null : Math.max(0, Math.floor((Date.now()-new Date(dob))/86400000));
+const el = id => document.getElementById(id);
+const esc = s => String(s==null?"":s).replace(/[&<>"]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+/* ---------- State ---------- */
+let sb=null, session=null;
+let households=[];        // [{id,name,alert_gap_min}]
+let currentHid=null;
+let babies=[];            // babies of current household [{id,name,color,dob,weight_kg,sort_order}]
+let sessions=[];          // sessions of current household [{id,baby_id,startISO,endISO,durationMin,ml}]
+let tab="track";
+let timers={};            // baby_id -> {startISO}  (local only)
+let pendingLog=null;      // {babyId, startISO, endISO, durationMin}
+let mlDraft="";
+let modal=null;           // {type:'newHousehold'|'newBaby'|'editBaby', ...}
+let notifiedMarker={};    // baby_id -> marker
+let charts={};
+
+/* ================================================================
+   Boot
+   ================================================================ */
+function boot(){
+  if(!window.SUPABASE_URL || window.SUPABASE_URL.includes("YOUR-PROJECT-ID")){ renderConfigError(); return; }
+  sb = window.supabase.createClient(window.SUPABASE_URL, window.SUPABASE_PUBLISHABLE_KEY);
+  sb.auth.getSession().then(({data})=>{
+    session=data.session;
+    if(session) startApp(); else renderAuth();
+    sb.auth.onAuthStateChange((_e,s)=>{
+      const was=!!session; session=s;
+      if(session && !was) startApp();
+      if(!session && was){ households=[]; currentHid=null; renderAuth(); }
+    });
+  });
+}
+function renderConfigError(){
+  el("app").innerHTML='<div class="wrap"><div class="card" style="text-align:center; padding:40px">'+
+    '<div class="fr" style="font-size:22px; margin-bottom:8px">Almost there</div>'+
+    '<p class="sub" style="max-width:420px; margin:0 auto">Open <b>index.html</b> and paste your Supabase '+
+    'Project URL and Publishable key into the CONFIG block near the top, then reload.</p></div></div>';
+}
+
+/* ================================================================
+   Auth
+   ================================================================ */
+function renderAuth(){
+  el("app").innerHTML=`
+  <div style="min-height:100vh; display:flex; align-items:center; justify-content:center; padding:20px">
+    <div class="card" style="max-width:380px; width:100%; text-align:center; padding:32px">
+      <div style="font-size:34px; margin-bottom:4px">&#127868;</div>
+      <h1 class="fr" style="font-weight:600; font-size:26px; margin:0 0 4px">Twin Feed Monitor</h1>
+      <p class="sub" style="margin:0 0 20px">Sign in with your email. One account holds all your feeding profiles, on every device.</p>
+      <div id="authForm">
+        <input id="email" class="inp" type="email" inputmode="email" placeholder="you@example.com" style="margin-bottom:12px" />
+        <button id="sendLink" class="btn-primary tap" style="width:100%; background:#5B8C7B">Send me a sign-in link</button>
+        <p id="authMsg" style="font-size:13px; margin-top:12px; color:var(--mute)"></p>
+      </div>
+    </div>
+  </div>`;
+  el("email").addEventListener("keydown",e=>{ if(e.key==="Enter") sendLink(); });
+  el("sendLink").addEventListener("click", sendLink);
+}
+async function sendLink(){
+  const email=el("email").value.trim(), msg=el("authMsg");
+  if(!email.includes("@")){ msg.style.color="#8A2B22"; msg.textContent="Please enter a valid email."; return; }
+  el("sendLink").disabled=true; el("sendLink").textContent="Sending...";
+  const { error }=await sb.auth.signInWithOtp({ email, options:{ emailRedirectTo:window.location.href.split("#")[0] }});
+  el("sendLink").disabled=false; el("sendLink").textContent="Send me a sign-in link";
+  if(error){ msg.style.color="#8A2B22"; msg.textContent=error.message; }
+  else el("authForm").innerHTML='<p style="color:#5B8C7B; font-weight:700; line-height:1.5">Check your email - we sent a sign-in link to<br><span style="color:var(--ink)">'+esc(email)+'</span></p>';
+}
+
+/* ================================================================
+   App start
+   ================================================================ */
+async function startApp(){
+  el("app").innerHTML='<div class="wrap" style="color:var(--mute)">Loading...</div>';
+  await loadHouseholds();
+  if(households.length===0){ renderPicker(); return; }
+  currentHid = currentHid || households[0].id;
+  await loadHousehold(currentHid);
+  subscribeRealtime();
+  render();
+  if(!window._tick){ window._tick=setInterval(tick,1000); }
+}
+
+async function loadHouseholds(){
+  const { data }=await sb.from("households").select("*").order("created_at",{ascending:true});
+  households=data||[];
+}
+async function loadHousehold(hid){
+  currentHid=hid;
+  const [{data:bs},{data:ss}]=await Promise.all([
+    sb.from("babies").select("*").eq("household_id",hid).order("sort_order",{ascending:true}),
+    sb.from("sessions").select("*").eq("household_id",hid).order("end_at",{ascending:true}),
+  ]);
+  babies=bs||[];
+  sessions=(ss||[]).map(mapRow);
+  timers={}; notifiedMarker={};
+}
+const mapRow = r => ({id:r.id, baby_id:r.baby_id, startISO:r.start_at, endISO:r.end_at, durationMin:r.duration_min, ml:r.ml});
+const currentHousehold = () => households.find(h=>h.id===currentHid) || {alert_gap_min:180, name:""};
+
+function subscribeRealtime(){
+  if(window._chan){ sb.removeChannel(window._chan); }
+  window._chan = sb.channel("hh-"+currentHid)
+    .on("postgres_changes",{event:"*",schema:"public",table:"sessions",filter:"household_id=eq."+currentHid},p=>{
+      if(p.eventType==="DELETE") sessions=sessions.filter(x=>x.id!==p.old.id);
+      else { const m=mapRow(p.new); sessions=sessions.filter(x=>x.id!==m.id).concat(m).sort((a,b)=>new Date(a.endISO)-new Date(b.endISO)); }
+      if(tab!=="babies" && !modal) render();
+    })
+    .on("postgres_changes",{event:"*",schema:"public",table:"babies",filter:"household_id=eq."+currentHid},async()=>{
+      const {data}=await sb.from("babies").select("*").eq("household_id",currentHid).order("sort_order",{ascending:true});
+      babies=data||[]; if(!modal) render();
+    })
+    .subscribe();
+}
+
+/* ================================================================
+   Household actions
+   ================================================================ */
+async function createHousehold(name){
+  const { data, error }=await sb.from("households").insert({ owner_id:session.user.id, name:name||"New profile" }).select().single();
+  if(error){ alert(error.message); return; }
+  households.push(data); currentHid=data.id;
+  babies=[]; sessions=[];
+  modal=null;
+  await startApp();
+}
+async function switchHousehold(hid){
+  if(hid===currentHid) return;
+  await loadHousehold(hid);
+  subscribeRealtime();
+  tab="track"; render();
+}
+async function updateGap(g){
+  const h=currentHousehold(); h.alert_gap_min=g;
+  await sb.from("households").update({alert_gap_min:g}).eq("id",currentHid);
+  render();
+}
+
+/* ================================================================
+   Baby actions
+   ================================================================ */
+async function addBaby(name, color){
+  const order=babies.length;
+  const { data, error }=await sb.from("babies").insert({
+    household_id:currentHid, owner_id:session.user.id, name:name||("Baby "+(order+1)), color:color||"A", sort_order:order
+  }).select().single();
+  if(error){ alert(error.message); return; }
+  babies.push(data); modal=null; render();
+}
+async function saveBaby(id, patch){
+  const b=babies.find(x=>x.id===id); if(!b) return;
+  Object.assign(b, patch);
+  await sb.from("babies").update(patch).eq("id",id);
+}
+async function removeBaby(id){
+  babies=babies.filter(x=>x.id!==id);
+  sessions=sessions.filter(s=>s.baby_id!==id);
+  modal=null; render();
+  await sb.from("babies").delete().eq("id",id);   // sessions cascade in DB
+}
+
+/* ================================================================
+   Timer / logging
+   ================================================================ */
+function startTimer(id){ timers[id]={startISO:new Date().toISOString()}; render(); }
+function stopTimer(id){
+  const t=timers[id]; if(!t) return;
+  const endISO=new Date().toISOString();
+  const durationMin=(Date.now()-new Date(t.startISO))/60000;
+  delete timers[id];
+  pendingLog={babyId:id, startISO:t.startISO, endISO, durationMin}; mlDraft=""; render();
+}
+function quickLog(id){ const now=new Date().toISOString(); pendingLog={babyId:id, startISO:now, endISO:now, durationMin:0}; mlDraft=""; render(); }
+async function commitLog(){
+  if(!pendingLog) return;
+  const ml=parseFloat(mlDraft);
+  const row={ household_id:currentHid, baby_id:pendingLog.babyId, owner_id:session.user.id,
+    start_at:pendingLog.startISO, end_at:pendingLog.endISO, duration_min:pendingLog.durationMin, ml:isNaN(ml)?null:ml };
+  const { data, error }=await sb.from("sessions").insert(row).select().single();
+  if(!error && data) sessions=sessions.filter(x=>x.id!==data.id).concat(mapRow(data));
+  pendingLog=null; mlDraft=""; render();
+}
+async function deleteSession(id){ sessions=sessions.filter(x=>x.id!==id); render(); await sb.from("sessions").delete().eq("id",id); }
+
+/* ================================================================
+   Alerts
+   ================================================================ */
+function lastFeedISO(id){
+  const list=sessions.filter(s=>s.baby_id===id); if(!list.length) return null;
+  return list.reduce((a,b)=> new Date(a.endISO)>new Date(b.endISO)?a:b).endISO;
+}
+function alertStatus(id){
+  const last=lastFeedISO(id); if(!last) return {minsSince:null,minsLeft:null,due:false,overdue:false};
+  const minsSince=(Date.now()-new Date(last))/60000, gap=currentHousehold().alert_gap_min||180;
+  const minsLeft=gap-minsSince;
+  return { minsSince, minsLeft, due:minsLeft<=0, overdue:minsLeft<=-30 };
+}
+function askNotify(){ if("Notification" in window && Notification.permission!=="granted") Notification.requestPermission(); }
+function tick(){
+  babies.forEach(b=>{
+    const t=timers[b.id];
+    if(t){ const n=el("clock-"+b.id); if(n) n.textContent=fmtClock(Date.now()-new Date(t.startISO).getTime()); }
+    const st=alertStatus(b.id), node=el("banner-"+b.id);
+    if(node && st.minsSince!=null) applyBanner(node,b,st);
+    const last=lastFeedISO(b.id);
+    if(last){ const marker=last+":"+(currentHousehold().alert_gap_min||180);
+      if(st.due && notifiedMarker[b.id]!==marker){ notifiedMarker[b.id]=marker;
+        if("Notification" in window && Notification.permission==="granted")
+          new Notification(b.name+" is due for a feed",{body:"Last fed "+fmtDur(st.minsSince)+" ago."});
+      }
+    }
+  });
+}
+function applyBanner(node,b,st){
+  const s=slotOf(b); let text,bg,fg;
+  if(st.overdue){ text="Overdue - last fed "+fmtDur(st.minsSince)+" ago"; bg="#F6DCD9"; fg="#8A2B22"; }
+  else if(st.due){ text="Due now - last fed "+fmtDur(st.minsSince)+" ago"; bg="#F7ECC9"; fg="#7A5A16"; }
+  else { text="Next feed in ~"+fmtDur(st.minsLeft); bg=s.soft; fg=s.ink; }
+  node.textContent=text; node.style.background=bg; node.style.color=fg; node.classList.remove("hide");
+}
+
+/* ================================================================
+   Analytics
+   ================================================================ */
+function buildAnalytics(){
+  const byDay={}; const hourly=Array.from({length:24},(_,h)=>({h}));
+  babies.forEach(b=>hourly.forEach(x=>x[b.id]=0));
+  sessions.forEach(s=>{
+    const d=dayKey(s.endISO);
+    byDay[d]=byDay[d]||{};
+    byDay[d][s.baby_id]=byDay[d][s.baby_id]||{ml:0,n:0};
+    byDay[d][s.baby_id].ml+=s.ml||0; byDay[d][s.baby_id].n+=1;
+    const hr=new Date(s.endISO).getHours(); if(hourly[hr][s.baby_id]!=null) hourly[hr][s.baby_id]+=1;
+  });
+  const days=Object.keys(byDay).sort();
+  const daily=days.map(d=>{ const row={label:fmtDate(d)}; babies.forEach(b=>{ const c=byDay[d][b.id]||{ml:0,n:0}; row["ml_"+b.id]=c.ml; row["n_"+b.id]=c.n; }); return row; });
+  const perBaby={};
+  babies.forEach(b=>{
+    const list=sessions.filter(s=>s.baby_id===b.id);
+    const daysWith=days.filter(d=>byDay[d][b.id]&&byDay[d][b.id].n>0);
+    const totalMl=list.reduce((a,s)=>a+(s.ml||0),0);
+    const mlS=list.filter(s=>s.ml!=null);
+    perBaby[b.id]={
+      avgDailyMl: daysWith.length? Math.round(totalMl/daysWith.length):null,
+      avgFeeds: daysWith.length? list.length/daysWith.length:null,
+      avgPerFeed: mlS.length? Math.round(mlS.reduce((a,s)=>a+s.ml,0)/mlS.length):null,
+    };
+  });
+  return { daily, hourly, perBaby, dayCount:days.length };
+}
+
+/* ================================================================
+   Render: first-run picker (no households yet)
+   ================================================================ */
+function renderPicker(){
+  el("app").innerHTML=`
+  <div class="wrap" style="max-width:460px">
+    <header style="text-align:center; margin:20px 0 24px">
+      <h1 class="title fr">Welcome</h1>
+      <p class="sub">Create your first feeding profile. A profile holds one set of babies and their history - make one per family or setup.</p>
+      <p class="sub" style="margin-top:8px">Signed in as ${esc(session.user.email)} - <a href="#" id="signout" style="color:#5B8C7B; font-weight:700">Sign out</a></p>
+    </header>
+    <div class="card">
+      <label class="lbl">Profile name</label>
+      <input id="hhName" class="inp" placeholder="e.g. The Twins" />
+      <button id="hhCreate" class="btn-primary tap" style="width:100%; background:#5B8C7B; margin-top:12px">Create profile</button>
+    </div>
+  </div>`;
+  el("signout").addEventListener("click",e=>{e.preventDefault(); sb.auth.signOut();});
+  const go=()=>createHousehold(el("hhName").value.trim());
+  el("hhCreate").addEventListener("click",go);
+  el("hhName").addEventListener("keydown",e=>{ if(e.key==="Enter") go(); });
+}
+
+/* ================================================================
+   Render: main
+   ================================================================ */
+function render(){
+  const h=currentHousehold();
+  const hhOptions=households.map(x=>`<option value="${x.id}" ${x.id===currentHid?"selected":""}>${esc(x.name)}</option>`).join("");
+  const header=`
+    <header style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; margin-bottom:18px">
+      <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap">
+        <select id="hhSelect" class="hsel">${hhOptions}</select>
+        <button id="hhNew" class="chip tap" title="New profile">+ New</button>
+        <button id="hhManage" class="chip tap" title="Rename or delete this profile">Manage</button>
+      </div>
+      <nav class="tabs">
+        ${["track|Track","insights|Insights","babies|Babies"].map(t=>{const[k,l]=t.split("|");
+          return `<button class="tabbtn tap ${tab===k?"on":""}" data-tab="${k}">${l}</button>`;}).join("")}
+      </nav>
+    </header>
+    <p class="sub" style="margin:-8px 0 14px">Signed in as ${esc(session.user.email)} - <a href="#" id="signout" style="color:#5B8C7B; font-weight:700">Sign out</a></p>`;
+
+  let body="";
+  if(tab==="track") body=viewTrack();
+  else if(tab==="babies") body=viewBabies();
+  else body=viewInsights();
+
+  el("app").innerHTML=`<div class="wrap">${header}${body}</div>` + (pendingLog?sheetHTML():"") + (modal?modalHTML():"");
+
+  el("signout").addEventListener("click",e=>{e.preventDefault(); sb.auth.signOut();});
+  el("hhSelect").addEventListener("change",e=>switchHousehold(e.target.value));
+  el("hhNew").addEventListener("click",()=>{ modal={type:"newHousehold"}; render(); });
+  el("hhManage").addEventListener("click",()=>{ modal={type:"manageHousehold"}; render(); });
+  document.querySelectorAll("[data-tab]").forEach(b=>b.addEventListener("click",()=>{tab=b.dataset.tab; render();}));
+
+  if(tab==="track") wireTrack();
+  else if(tab==="babies") wireBabies();
+  else drawCharts();
+
+  if(pendingLog) wireSheet();
+  if(modal) wireModal();
+}
+
+/* ---------- Track ---------- */
+function viewTrack(){
+  const gap=currentHousehold().alert_gap_min||180;
+  const gaps=[90,120,150,180,210,240];
+  const chips=gaps.map(g=>`<button class="chip tap ${gap===g?"on":""}" data-gap="${g}">${fmtDur(g)}</button>`).join("");
+  let cards;
+  if(babies.length===0){
+    cards=`<div class="card" style="text-align:center; padding:30px; color:var(--mute); grid-column:1/-1">
+      No babies in this profile yet. Go to the <b>Babies</b> tab to add one.</div>`;
+  } else {
+    cards=babies.map(babyCardHTML).join("");
+  }
+  const recent = sessions.length===0
+    ? '<div style="color:var(--mute); font-size:14px; padding:12px 0">No feeds logged yet.</div>'
+    : '<div style="display:flex; flex-direction:column; gap:6px">'+
+      sessions.slice().reverse().slice(0,14).map(s=>{
+        const b=babies.find(x=>x.id===s.baby_id); if(!b) return "";
+        const sl=slotOf(b);
+        return `<div class="row" style="background:${sl.soft}">
+          <span class="dot" style="width:8px;height:8px;background:${sl.hex}"></span>
+          <span style="font-weight:700; font-size:13px; color:${sl.ink}; min-width:64px">${esc(b.name)}</span>
+          <span style="font-size:13px">${fmtTime(s.endISO)}</span>
+          <span style="font-size:13px; color:var(--mute)">${fmtDate(s.endISO)}</span>
+          <span style="margin-left:auto; font-size:13px; color:var(--mute)">${s.durationMin>=1?fmtDur(s.durationMin)+" - ":""}${s.ml!=null?s.ml+" ml":"-"}</span>
+          <button data-del="${s.id}" title="Delete" style="border:none; background:transparent; color:var(--mute); font-size:16px; line-height:1; padding:0 2px">&times;</button>
+        </div>`;}).join("")+'</div>';
+  return `
+    <section class="card">
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px">
+        <div><div style="font-weight:800; font-size:15px">Feed reminder</div>
+        <div style="color:var(--mute); font-size:13px">Alert me if a baby hasn't fed for...</div></div>
+        <div style="display:flex; gap:6px; flex-wrap:wrap">${chips}
+          <button id="notify" class="chip tap" style="color:var(--mute)">&#128276; Enable alerts</button></div>
+      </div>
+    </section>
+    <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); margin-top:14px">${cards}</div>
+    <section class="card" style="margin-top:14px">
+      <div style="font-weight:800; font-size:15px; margin-bottom:10px">Recent feeds</div>${recent}
+    </section>`;
+}
+function babyCardHTML(b){
+  const sl=slotOf(b); const t=timers[b.id]; const running=!!t;
+  const elapsed=running?fmtClock(Date.now()-new Date(t.startISO).getTime()):"00:00";
+  return `
+    <div class="card" style="border-top:4px solid ${sl.hex}">
+      <div style="display:flex; align-items:center; gap:8px">
+        <span class="dot" style="background:${sl.hex}"></span>
+        <div class="fr" style="font-size:20px; font-weight:600; color:${sl.ink}">${esc(b.name)}</div>
+      </div>
+      <div style="text-align:center; padding:14px 0 6px">
+        <div id="clock-${b.id}" class="fr" style="font-size:46px; font-weight:600; letter-spacing:-.02em; color:${running?sl.hex:"#C9C3B4"}; font-variant-numeric:tabular-nums">${elapsed}</div>
+        <div style="font-size:12px; color:var(--mute); margin-top:-2px">${running?"feeding...":"timer ready"}</div>
+      </div>
+      <div style="display:flex; gap:8px">
+        ${running
+          ? `<button data-stop="${b.id}" class="btn-primary tap" style="flex:1; background:${sl.ink}">&#9632; Stop &amp; log</button>`
+          : `<button data-start="${b.id}" class="btn-primary tap" style="flex:1; background:${sl.hex}">&#9654; Start feed</button>`}
+        <button data-quick="${b.id}" class="btn-ghost tap">+ Past</button>
+      </div>
+      <div id="banner-${b.id}" class="banner hide"></div>
+    </div>`;
+}
+function wireTrack(){
+  document.querySelectorAll("[data-gap]").forEach(b=>b.addEventListener("click",()=>updateGap(+b.dataset.gap)));
+  el("notify")&&el("notify").addEventListener("click",askNotify);
+  document.querySelectorAll("[data-start]").forEach(b=>b.addEventListener("click",()=>startTimer(b.dataset.start)));
+  document.querySelectorAll("[data-stop]").forEach(b=>b.addEventListener("click",()=>stopTimer(b.dataset.stop)));
+  document.querySelectorAll("[data-quick]").forEach(b=>b.addEventListener("click",()=>quickLog(b.dataset.quick)));
+  document.querySelectorAll("[data-del]").forEach(b=>b.addEventListener("click",()=>deleteSession(+b.dataset.del)));
+  babies.forEach(b=>{ const st=alertStatus(b.id), node=el("banner-"+b.id); if(node && st.minsSince!=null) applyBanner(node,b,st); });
+}
+
+/* ---------- ml sheet ---------- */
+function sheetHTML(){
+  const b=babies.find(x=>x.id===pendingLog.babyId)||{name:"Baby",color:"A"};
+  const sl=slotOf(b); const quick=[30,60,90,120,150];
+  const durNote=pendingLog.durationMin>=1?"Fed for "+fmtDur(pendingLog.durationMin)+". ":"";
+  return `
+    <div class="sheet-bg" id="sheetBg"><div class="sheet">
+      <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px">
+        <span class="dot" style="background:${sl.hex}"></span>
+        <div class="fr" style="font-size:20px; font-weight:600; color:${sl.ink}">${esc(b.name)}</div>
+      </div>
+      <p style="color:var(--mute); font-size:13px; margin:0 0 14px">${durNote}How much did they take? (ml)</p>
+      <input id="mlInput" class="inp" type="number" inputmode="decimal" placeholder="e.g. 90" style="font-size:22px; font-weight:700" />
+      <div style="display:flex; gap:6px; flex-wrap:wrap; margin:12px 0 16px">
+        ${quick.map(q=>`<button class="tap" data-ml="${q}" style="flex:1; border:1px solid var(--line); background:var(--paper); border-radius:10px; padding:8px; font-weight:700; font-size:14px">${q}</button>`).join("")}
+      </div>
+      <div style="display:flex; gap:10px">
+        <button id="mlCancel" class="tap" style="flex:1; border:1px solid var(--line); background:var(--paper); border-radius:12px; padding:12px; font-weight:700; color:var(--mute)">Cancel</button>
+        <button id="mlSave" class="btn-primary tap" style="flex:2; background:${sl.hex}">Save feed</button>
+      </div>
+    </div></div>`;
+}
+function wireSheet(){
+  const inp=el("mlInput"); inp.value=mlDraft; inp.focus();
+  inp.addEventListener("input",()=>mlDraft=inp.value);
+  inp.addEventListener("keydown",e=>{ if(e.key==="Enter") commitLog(); });
+  document.querySelectorAll("[data-ml]").forEach(b=>b.addEventListener("click",()=>{ mlDraft=b.dataset.ml; inp.value=mlDraft; }));
+  el("mlCancel").addEventListener("click",()=>{ pendingLog=null; render(); });
+  el("mlSave").addEventListener("click",commitLog);
+  el("sheetBg").addEventListener("click",e=>{ if(e.target.id==="sheetBg"){ pendingLog=null; render(); }});
+}
+
+/* ---------- Babies tab ---------- */
+function viewBabies(){
+  const cards=babies.map(b=>{
+    const sl=slotOf(b); const d=ageDays(b.dob); const w=parseFloat(b.weight_kg);
+    const band=d!=null?bandFor(d):null;
+    const nMin=!isNaN(w)?Math.round(w*ML_PER_KG.min):null;
+    const nTyp=!isNaN(w)?Math.round(w*ML_PER_KG.typical):null;
+    const nMax=!isNaN(w)?Math.min(MAX_DAILY_ML,Math.round(w*ML_PER_KG.max)):null;
+    const info=d!=null?`<div style="font-size:13px; color:${sl.ink}; font-weight:700">${d} days old - ${band} band</div>`
+                      :`<div style="font-size:13px; color:var(--mute)">Add DOB to see the age band.</div>`;
+    const need=nTyp!=null?`<div style="margin-top:8px; font-size:13px; color:${sl.ink}">Estimated daily need: <b>${nMin}-${nMax} ml</b> (~ ${nTyp} ml typical)
+        <div style="color:var(--mute); font-size:12px; margin-top:2px">Based on ${ML_PER_KG.min}-${ML_PER_KG.max} ml/kg/day.</div></div>`
+      :`<div style="margin-top:8px; font-size:13px; color:var(--mute)">Add weight to estimate daily need.</div>`;
+    return `
+      <div class="card" style="border-top:4px solid ${sl.hex}">
+        <div style="display:flex; align-items:center; gap:8px; margin-bottom:12px">
+          <span class="dot" style="background:${sl.hex}"></span>
+          <input class="inp" data-baby="${b.id}|name" value="${esc(b.name)}" style="font-weight:700; padding:6px 8px; font-family:'Fraunces',serif; font-size:18px; border-color:transparent; background:transparent" />
+          <button data-edit="${b.id}" class="btn-ghost tap" style="padding:6px 10px">Edit</button>
+        </div>
+        <label class="lbl">Date of birth</label>
+        <input class="inp" type="date" data-baby="${b.id}|dob" value="${b.dob||""}" />
+        <label class="lbl" style="margin-top:12px">Current weight (kg)</label>
+        <input class="inp" type="number" inputmode="decimal" step="0.01" placeholder="e.g. 4.2" data-baby="${b.id}|weight_kg" value="${b.weight_kg??""}" />
+        <div style="margin-top:14px; background:${sl.soft}; border-radius:12px; padding:14px">${info}${need}</div>
+      </div>`;
+  }).join("");
+  const addBtn = babies.length<4
+    ? `<button id="addBaby" class="card tap" style="border:2px dashed var(--line); background:transparent; color:var(--mute); font-weight:800; font-size:15px; display:flex; align-items:center; justify-content:center; min-height:120px">+ Add a baby</button>`
+    : `<div class="card" style="color:var(--mute); font-size:13px; display:flex; align-items:center; justify-content:center">Up to 4 babies per profile.</div>`;
+  return `<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(280px,1fr))">${cards}${addBtn}
+    <p class="disc" style="grid-column:1/-1; margin:4px 4px 0">Reference figures follow AAP-style guidance (~150 ml/kg/day, cap ~960 ml/day for formula) and typical age-band norms. Every baby differs - cluster feeding and growth spurts are normal. This is not medical advice; let your pediatrician's growth checks be the real guide.</p></div>`;
+}
+function wireBabies(){
+  document.querySelectorAll("[data-baby]").forEach(inp=>{
+    inp.addEventListener("change",()=>{
+      const [id,field]=inp.dataset.baby.split("|");
+      const val = field==="name" ? (inp.value.trim()||"Baby") : inp.value;
+      saveBaby(id,{[field]:val});
+    });
+  });
+  el("addBaby")&&el("addBaby").addEventListener("click",()=>{ modal={type:"newBaby"}; render(); });
+  document.querySelectorAll("[data-edit]").forEach(b=>b.addEventListener("click",()=>{ modal={type:"editBaby", id:b.dataset.edit}; render(); }));
+}
+
+/* ---------- Insights ---------- */
+function viewInsights(){
+  if(babies.length===0)
+    return `<div class="card" style="text-align:center; padding:40px; color:var(--mute)">Add a baby first (Babies tab).</div>`;
+  const a=buildAnalytics(); window._analytics=a;
+  if(a.dayCount===0)
+    return `<div class="card" style="text-align:center; padding:40px; color:var(--mute)">
+      <div class="fr" style="font-size:22px; color:var(--ink); margin-bottom:6px">Nothing to chart yet</div>
+      Log a few feeds and your patterns will appear here.</div>`;
+  const stat=babies.map(b=>{
+    const sl=slotOf(b); const d=a.perBaby[b.id]; const w=parseFloat(b.weight_kg);
+    const nTyp=!isNaN(w)?Math.round(w*ML_PER_KG.typical):null;
+    const pct=(nTyp&&d.avgDailyMl)?Math.round(d.avgDailyMl/nTyp*100):null;
+    const m=(l,v)=>`<div><div class="metricv fr" style="color:${sl.hex}">${v}</div><div class="metricl">${l}</div></div>`;
+    return `<div class="card" style="border-top:4px solid ${sl.hex}">
+      <div style="display:flex; align-items:center; gap:8px; margin-bottom:10px">
+        <span class="dot" style="background:${sl.hex}"></span>
+        <div class="fr" style="font-size:18px; font-weight:600; color:${sl.ink}">${esc(b.name)}</div></div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px">
+        ${m("Avg / day", d.avgDailyMl?d.avgDailyMl+" ml":"-")}
+        ${m("Feeds / day", d.avgFeeds?d.avgFeeds.toFixed(1):"-")}
+        ${m("Avg / feed", d.avgPerFeed?d.avgPerFeed+" ml":"-")}
+        ${m("vs. standard", pct!=null?pct+"%":"-")}
+      </div></div>`;
+  }).join("");
+  const sva=babies.map(b=>{
+    const w=parseFloat(b.weight_kg); const d=a.perBaby[b.id];
+    if(isNaN(w)||!d.avgDailyMl)
+      return `<div class="card"><div style="font-weight:800; font-size:15px; margin-bottom:10px">${esc(b.name)}: standard vs actual</div>
+        <div style="color:var(--mute); font-size:13px; padding:8px 0">${isNaN(w)?"Add this baby's weight (Babies tab) to compare.":"Log feeds with ml to compare."}</div></div>`;
+    return `<div class="card"><div style="font-weight:800; font-size:15px; margin-bottom:10px">${esc(b.name)}: standard vs actual</div>
+      <div class="chart-box" style="height:180px"><canvas id="sva-${b.id}"></canvas></div></div>`;
+  }).join("");
+  return `
+    <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(240px,1fr))">${stat}</div>
+    <section class="card" style="margin-top:14px">
+      <div style="font-weight:800; font-size:15px; margin-bottom:10px">Daily consumption (ml)</div>
+      <div class="chart-box" style="height:240px"><canvas id="dailyMl"></canvas></div>
+    </section>
+    <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); margin-top:14px">${sva}</div>
+    <section class="card" style="margin-top:14px">
+      <div style="font-weight:800; font-size:15px; margin-bottom:10px">Feeds per day</div>
+      <div class="chart-box" style="height:220px"><canvas id="feedsDay"></canvas></div>
+    </section>
+    <section class="card" style="margin-top:14px">
+      <div style="font-weight:800; font-size:15px; margin-bottom:2px">When feeds happen (all days)</div>
+      <p style="color:var(--mute); font-size:12px; margin:0 0 8px">Count of feeds by hour - helps spot cluster-feeding windows.</p>
+      <div class="chart-box" style="height:200px"><canvas id="hourly"></canvas></div>
+    </section>
+    <p class="disc" style="margin:16px 4px 0">Reference ranges are population averages, not targets for your specific babies. Twins, especially if premature, often track differently. This tool is not medical advice - always defer to your pediatrician's growth monitoring.</p>`;
+}
+function drawCharts(){
+  Object.values(charts).forEach(c=>{try{c.destroy();}catch(e){}}); charts={};
+  const a=window._analytics; if(!a) return;
+  const labels=a.daily.map(d=>d.label);
+  const gridC="#E8E1D4", tickC="#8A8578";
+  const base={responsive:true, maintainAspectRatio:false,
+    plugins:{legend:{labels:{font:{family:"Nunito",size:13}, color:"#33302A"}}},
+    scales:{x:{grid:{color:gridC}, ticks:{color:tickC, font:{size:11}}},
+            y:{grid:{color:gridC}, ticks:{color:tickC, font:{size:11}}, beginAtZero:true}}};
+  if(el("dailyMl")) charts.d=new Chart(el("dailyMl"),{type:"bar",
+    data:{labels, datasets:babies.map(b=>({label:b.name, data:a.daily.map(d=>d["ml_"+b.id]||0), backgroundColor:slotOf(b).hex, borderRadius:6}))}, options:base});
+  if(el("feedsDay")) charts.f=new Chart(el("feedsDay"),{type:"line",
+    data:{labels, datasets:babies.map(b=>({label:b.name, data:a.daily.map(d=>d["n_"+b.id]||0), borderColor:slotOf(b).hex, backgroundColor:slotOf(b).hex, tension:.3, borderWidth:2.5, pointRadius:3}))}, options:base});
+  if(el("hourly")) charts.h=new Chart(el("hourly"),{type:"bar",
+    data:{labels:a.hourly.map(x=>x.h), datasets:babies.map(b=>({label:b.name, data:a.hourly.map(x=>x[b.id]||0), backgroundColor:slotOf(b).hex, stack:"s", borderRadius:3}))},
+    options:{...base, scales:{x:{...base.scales.x, stacked:true}, y:{...base.scales.y, stacked:true}}}});
+  babies.forEach(b=>{
+    const cv=el("sva-"+b.id); if(!cv) return;
+    const w=parseFloat(b.weight_kg); const d=a.perBaby[b.id];
+    if(isNaN(w)||!d.avgDailyMl) return;
+    charts["sva"+b.id]=new Chart(cv,{type:"bar",
+      data:{labels:["Std (min)","Std (typ)","Std (max)","Actual"],
+        datasets:[{data:[Math.round(w*ML_PER_KG.min),Math.round(w*ML_PER_KG.typical),Math.min(MAX_DAILY_ML,Math.round(w*ML_PER_KG.max)),d.avgDailyMl],
+          backgroundColor:["#CFC8B8","#CFC8B8","#CFC8B8",slotOf(b).hex], borderRadius:6}]},
+      options:{...base, indexAxis:"y", plugins:{legend:{display:false}}}});
+  });
+}
+
+/* ================================================================
+   Modals: new household, manage household, new/edit baby
+   ================================================================ */
+function modalHTML(){
+  if(modal.type==="newHousehold") return simpleModal("New profile",
+    `<label class="lbl">Profile name</label><input id="mName" class="inp" placeholder="e.g. Grandma's house" />`,
+    "Create");
+  if(modal.type==="manageHousehold"){ const h=currentHousehold();
+    return simpleModal("Manage profile",
+      `<label class="lbl">Rename</label><input id="mName" class="inp" value="${esc(h.name)}" />
+       <button id="mDelete" class="tap" style="width:100%; margin-top:16px; border:1px solid #E7C9C4; background:#FBEEEC; color:#8A2B22; border-radius:12px; padding:11px; font-weight:800">Delete this profile</button>
+       <p class="disc" style="margin-top:8px">Deleting removes this profile and all its babies and feeds. This can't be undone.</p>`,
+      "Save");
+  }
+  if(modal.type==="newBaby"){
+    const used=babies.map(b=>b.color);
+    const free=["A","B","C","D"].find(c=>!used.includes(c))||"A";
+    return simpleModal("Add a baby",
+      `<label class="lbl">Name</label><input id="mName" class="inp" placeholder="e.g. Baby A" />
+       <label class="lbl" style="margin-top:12px">Colour</label>${colorPicker(free)}`,
+      "Add");
+  }
+  if(modal.type==="editBaby"){ const b=babies.find(x=>x.id===modal.id)||{name:"",color:"A"};
+    return simpleModal("Edit baby",
+      `<label class="lbl">Name</label><input id="mName" class="inp" value="${esc(b.name)}" />
+       <label class="lbl" style="margin-top:12px">Colour</label>${colorPicker(b.color)}
+       <button id="mRemove" class="tap" style="width:100%; margin-top:16px; border:1px solid #E7C9C4; background:#FBEEEC; color:#8A2B22; border-radius:12px; padding:11px; font-weight:800">Remove baby</button>
+       <p class="disc" style="margin-top:8px">Removing deletes this baby and their feeds from this profile.</p>`,
+      "Save");
+  }
+  return "";
+}
+function colorPicker(sel){
+  return `<div id="mColors" style="display:flex; gap:8px">`+
+    ["A","B","C","D"].map(c=>`<button data-color="${c}" class="tap" style="flex:1; height:42px; border-radius:10px; border:3px solid ${c===sel?"var(--ink)":"transparent"}; background:${SLOTS[c].hex}"></button>`).join("")+
+    `</div><input type="hidden" id="mColor" value="${sel}" />`;
+}
+function simpleModal(title, inner, okLabel){
+  return `<div class="sheet-bg" id="modalBg"><div class="sheet">
+    <div class="fr" style="font-size:20px; font-weight:600; margin-bottom:12px">${title}</div>
+    ${inner}
+    <div style="display:flex; gap:10px; margin-top:18px">
+      <button id="mCancel" class="tap" style="flex:1; border:1px solid var(--line); background:var(--paper); border-radius:12px; padding:12px; font-weight:700; color:var(--mute)">Cancel</button>
+      <button id="mOk" class="btn-primary tap" style="flex:2; background:#5B8C7B">${okLabel}</button>
+    </div>
+  </div></div>`;
+}
+function wireModal(){
+  const close=()=>{ modal=null; render(); };
+  el("modalBg").addEventListener("click",e=>{ if(e.target.id==="modalBg") close(); });
+  el("mCancel").addEventListener("click",close);
+  const nameEl=el("mName"); if(nameEl) nameEl.focus();
+  // colour picker
+  document.querySelectorAll("[data-color]").forEach(btn=>btn.addEventListener("click",()=>{
+    el("mColor").value=btn.dataset.color;
+    document.querySelectorAll("[data-color]").forEach(x=>x.style.borderColor="transparent");
+    btn.style.borderColor="var(--ink)";
+  }));
+  el("mOk").addEventListener("click",async()=>{
+    if(modal.type==="newHousehold"){ await createHousehold(el("mName").value.trim()); }
+    else if(modal.type==="manageHousehold"){
+      const name=el("mName").value.trim()||currentHousehold().name;
+      const h=currentHousehold(); h.name=name;
+      await sb.from("households").update({name}).eq("id",currentHid);
+      modal=null; render();
+    }
+    else if(modal.type==="newBaby"){ await addBaby(el("mName").value.trim(), el("mColor").value); }
+    else if(modal.type==="editBaby"){
+      await saveBaby(modal.id,{ name:el("mName").value.trim()||"Baby", color:el("mColor").value });
+      modal=null; render();
+    }
+  });
+  const del=el("mDelete"); if(del) del.addEventListener("click",async()=>{
+    if(!confirm("Delete this whole profile and everything in it?")) return;
+    await sb.from("households").delete().eq("id",currentHid);
+    households=households.filter(h=>h.id!==currentHid);
+    currentHid=households[0]?households[0].id:null;
+    modal=null;
+    if(currentHid) startApp(); else renderPicker();
+  });
+  const rem=el("mRemove"); if(rem) rem.addEventListener("click",()=>{ if(confirm("Remove this baby and their feeds?")) removeBaby(modal.id); });
+}
+
+/* ---------- go ---------- */
+if(window.supabase && window.supabase.createClient) boot();
+else window.addEventListener("load", boot);
+</script>
+</body>
+</html>
