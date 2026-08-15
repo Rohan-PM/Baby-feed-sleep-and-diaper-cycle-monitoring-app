@@ -1,0 +1,946 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+<title>Baby Care Monitor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.0/dist/umd/supabase.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+<style>
+  :root{ --cream:#FBF8F2; --paper:#fff; --line:#E8E1D4; --mute:#8A8578; --ink:#33302A; }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{background:var(--cream); color:var(--ink); font-family:'Nunito',system-ui,sans-serif; -webkit-tap-highlight-color:transparent}
+  .fr{font-family:'Fraunces',Georgia,serif}
+  button{cursor:pointer; font-family:inherit}
+  a{color:inherit}
+  .tap{transition:transform .06s ease}
+  .tap:active{transform:scale(.97)}
+  @media (prefers-reduced-motion:reduce){.tap{transition:none}}
+  input:focus,button:focus-visible,select:focus,textarea:focus{outline:2px solid var(--ink); outline-offset:2px}
+  input,select,textarea{font-family:inherit}
+  .wrap{max-width:940px; margin:0 auto; padding:20px 16px 90px}
+  .card{background:var(--paper); border:1px solid var(--line); border-radius:18px; padding:18px; box-shadow:0 1px 2px rgba(60,50,30,.03)}
+  .grid{display:grid; gap:14px}
+  .hide{display:none !important}
+  h1.title{font-size:26px; font-weight:600; letter-spacing:-.02em; margin:0}
+  .sub{margin:2px 0 0; color:var(--mute); font-size:14px}
+  .tabs{display:flex; gap:4px; background:var(--paper); padding:4px; border-radius:14px; border:1px solid var(--line); flex-wrap:wrap}
+  .tabbtn{border:none; border-radius:10px; padding:8px 14px; font-size:14px; font-weight:700; background:transparent; color:var(--mute)}
+  .tabbtn.on{background:var(--ink); color:var(--cream)}
+  .chip{border:1px solid var(--line); background:var(--paper); color:var(--ink); border-radius:999px; padding:6px 12px; font-size:13px; font-weight:700}
+  .chip.on{border-color:var(--ink); background:var(--ink); color:var(--cream)}
+  .lbl{display:block; font-size:13px; font-weight:700; color:var(--mute); margin-bottom:5px}
+  .inp{width:100%; font-size:16px; padding:10px 12px; border-radius:10px; border:1.5px solid var(--line); font-weight:600; color:var(--ink)}
+  .metricv{font-size:22px; font-weight:600; line-height:1.1}
+  .metricl{font-size:12px; color:var(--mute); font-weight:600}
+  .row{display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:10px}
+  .dot{width:12px; height:12px; border-radius:999px; flex:none}
+  .btn-primary{border:none; border-radius:12px; padding:12px; font-weight:800; font-size:15px; color:#fff}
+  .btn-ghost{border:1px solid var(--line); border-radius:12px; padding:12px 14px; font-weight:700; font-size:13px; background:var(--paper); color:var(--ink)}
+  .sheet-bg{position:fixed; inset:0; background:rgba(30,28,24,.35); display:flex; align-items:flex-end; justify-content:center; z-index:50}
+  .sheet{background:var(--paper); width:100%; max-width:460px; border-radius:20px 20px 0 0; padding:22px; box-shadow:0 -8px 40px rgba(0,0,0,.15); max-height:88vh; overflow:auto}
+  .disc{color:var(--mute); font-size:12px; line-height:1.6}
+  .banner{margin-top:10px; border-radius:10px; padding:8px 12px; font-size:13px; font-weight:700; text-align:center}
+  .chart-box{position:relative; width:100%}
+  .hsel{border:1px solid var(--line); background:var(--paper); border-radius:10px; padding:8px 10px; font-size:14px; font-weight:700; color:var(--ink); max-width:220px}
+  .seg{display:flex; gap:6px}
+  .segbtn{flex:1; border:1px solid var(--line); background:var(--paper); border-radius:10px; padding:9px; font-weight:700; font-size:13px}
+  .pill{display:inline-block; padding:2px 8px; border-radius:999px; font-size:11px; font-weight:800}
+  @media print{
+    body{background:#fff}
+    .noprint{display:none !important}
+    .wrap{padding:0; max-width:none}
+    .card{box-shadow:none; border:1px solid #ddd; break-inside:avoid}
+  }
+</style>
+</head>
+<body>
+
+<!-- ========================== CONFIG ========================== -->
+<!-- Paste your two Supabase values here. This is the ONLY thing you edit. -->
+<script>
+  window.SUPABASE_URL = "https://YOUR-PROJECT-ID.supabase.co";
+  window.SUPABASE_PUBLISHABLE_KEY = "sb_publishable_xxxxxxxxxxxxxxxxxxxx";
+</script>
+<!-- =========================================================== -->
+
+<div id="app"></div>
+<script>
+/* ================================================================
+   Baby Care Monitor - single file, v3
+   Feeding + Sleep (gap-based) + Diaper, multi-profile, analytics,
+   doctor summary (print to PDF), and a local data assistant.
+   Plain JS + Supabase (CDN) + Chart.js (CDN). No build, no Node.
+   ================================================================ */
+
+/* ---------- Reference data ---------- */
+const ML_PER_KG = { min:120, typical:150, max:180 };
+const MAX_DAILY_ML = 960;
+/* Feeding age bands (per-feed + frequency norms) */
+const AGE_BANDS = [
+  {label:"0-1 wk", max:7},   {label:"1-4 wk", max:28},
+  {label:"1-2 mo", max:60},  {label:"2-4 mo", max:120},
+  {label:"4-6 mo", max:180}, {label:"6-12 mo", max:365},
+];
+const bandFor = d => (AGE_BANDS.find(b=>d<=b.max) || AGE_BANDS[AGE_BANDS.length-1]).label;
+/* Sleep norms (AAP/AASM, hours per 24h) by age in days */
+const SLEEP_NORMS = [
+  {max:120, label:"0-3 mo",  lo:14, hi:17},
+  {max:365, label:"4-11 mo", lo:12, hi:16},
+  {max:730, label:"1-2 yr",  lo:11, hi:14},
+  {max:99999, label:"2 yr+", lo:10, hi:13},
+];
+const sleepNormFor = d => SLEEP_NORMS.find(s=>d<=s.max) || SLEEP_NORMS[SLEEP_NORMS.length-1];
+/* Diaper norms (per day) by age in days */
+const DIAPER_NORMS = [
+  {max:120, label:"0-3 mo",  lo:8, hi:12},
+  {max:365, label:"4-11 mo", lo:6, hi:10},
+  {max:99999, label:"1 yr+", lo:5, hi:8},
+];
+const diaperNormFor = d => DIAPER_NORMS.find(s=>d<=s.max) || DIAPER_NORMS[DIAPER_NORMS.length-1];
+
+const SLOTS = {
+  A:{hex:"#5B8C7B", soft:"#E4EFE9", ink:"#2C4A40"},
+  B:{hex:"#C6803E", soft:"#F6E9DC", ink:"#6B4622"},
+  C:{hex:"#6E7BA6", soft:"#E6E9F2", ink:"#33406B"},
+  D:{hex:"#A65B7B", soft:"#F3E4EC", ink:"#6B2C48"},
+};
+const slotOf = b => SLOTS[(b&&b.color)] || SLOTS.A;
+
+/* ---------- Utilities ---------- */
+const pad = n => String(n).padStart(2,"0");
+const fmtClock = ms => { const t=Math.max(0,Math.floor(ms/1000)); const h=Math.floor(t/3600); const m=Math.floor((t%3600)/60); const s=t%60; return h>0? h+":"+pad(m)+":"+pad(s) : pad(m)+":"+pad(s); };
+const fmtTime = iso => new Date(iso).toLocaleTimeString([], {hour:"numeric", minute:"2-digit"});
+const fmtDate = iso => new Date(iso).toLocaleDateString([], {month:"short", day:"numeric"});
+const fmtDur = m => { if(m==null) return "-"; if(m<60) return Math.round(m)+"m"; const h=Math.floor(m/60), mm=Math.round(m%60); return mm? h+"h "+mm+"m" : h+"h"; };
+const fmtHrs = m => (m/60).toFixed(1)+"h";
+const dayKey = iso => new Date(iso).toLocaleDateString("en-CA");
+const ageDays = dob => !dob ? null : Math.max(0, Math.floor((Date.now()-new Date(dob))/86400000));
+const el = id => document.getElementById(id);
+const esc = s => String(s==null?"":s).replace(/[&<>"]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const isNight = iso => { const h=new Date(iso).getHours(); return h>=19 || h<7; }; /* 7pm-7am = night */
+
+/* ---------- State ---------- */
+let sb=null, session=null;
+let households=[], currentHid=null;
+let babies=[], feeds=[], sleeps=[], diapers=[];
+let tab="track";
+let timers={};            /* baby_id -> {startISO} : an active FEED timer */
+let pendingLog=null;      /* {babyId, startISO, endISO, durationMin} for feed ml */
+let mlDraft="";
+let modal=null;
+let notifiedMarker={};
+let charts={};
+let summaryBabyId=null;   /* which baby's doctor summary is open */
+
+/* ================================================================ Boot */
+function boot(){
+  if(!window.SUPABASE_URL || window.SUPABASE_URL.includes("YOUR-PROJECT-ID")){ renderConfigError(); return; }
+  sb = window.supabase.createClient(window.SUPABASE_URL, window.SUPABASE_PUBLISHABLE_KEY);
+  sb.auth.getSession().then(({data})=>{
+    session=data.session;
+    if(session) startApp(); else renderAuth();
+    sb.auth.onAuthStateChange((_e,s)=>{
+      const was=!!session; session=s;
+      if(session && !was) startApp();
+      if(!session && was){ households=[]; currentHid=null; renderAuth(); }
+    });
+  });
+}
+function renderConfigError(){
+  el("app").innerHTML='<div class="wrap"><div class="card" style="text-align:center; padding:40px">'+
+    '<div class="fr" style="font-size:22px; margin-bottom:8px">Almost there</div>'+
+    '<p class="sub" style="max-width:420px; margin:0 auto">Open <b>index.html</b> and paste your Supabase '+
+    'Project URL and Publishable key into the CONFIG block near the top, then reload.</p></div></div>';
+}
+
+/* ================================================================ Auth */
+function renderAuth(){
+  el("app").innerHTML=`
+  <div style="min-height:100vh; display:flex; align-items:center; justify-content:center; padding:20px">
+    <div class="card" style="max-width:380px; width:100%; text-align:center; padding:32px">
+      <div style="font-size:34px; margin-bottom:4px">&#128118;</div>
+      <h1 class="fr" style="font-weight:600; font-size:26px; margin:0 0 4px">Baby Care Monitor</h1>
+      <p class="sub" style="margin:0 0 20px">Sign in with your email. One account holds all your baby profiles, on every device.</p>
+      <div id="authForm">
+        <input id="email" class="inp" type="email" inputmode="email" placeholder="you@example.com" style="margin-bottom:12px" />
+        <button id="sendLink" class="btn-primary tap" style="width:100%; background:#5B8C7B">Send me a sign-in link</button>
+        <p id="authMsg" style="font-size:13px; margin-top:12px; color:var(--mute)"></p>
+      </div>
+    </div>
+  </div>`;
+  el("email").addEventListener("keydown",e=>{ if(e.key==="Enter") sendLink(); });
+  el("sendLink").addEventListener("click", sendLink);
+}
+async function sendLink(){
+  const email=el("email").value.trim(), msg=el("authMsg");
+  if(!email.includes("@")){ msg.style.color="#8A2B22"; msg.textContent="Please enter a valid email."; return; }
+  el("sendLink").disabled=true; el("sendLink").textContent="Sending...";
+  const { error }=await sb.auth.signInWithOtp({ email, options:{ emailRedirectTo:window.location.href.split("#")[0] }});
+  el("sendLink").disabled=false; el("sendLink").textContent="Send me a sign-in link";
+  if(error){ msg.style.color="#8A2B22"; msg.textContent=error.message; }
+  else el("authForm").innerHTML='<p style="color:#5B8C7B; font-weight:700; line-height:1.5">Check your email - we sent a sign-in link to<br><span style="color:var(--ink)">'+esc(email)+'</span></p>';
+}
+
+/* ================================================================ Start */
+async function startApp(){
+  el("app").innerHTML='<div class="wrap" style="color:var(--mute)">Loading...</div>';
+  await loadHouseholds();
+  if(households.length===0){ renderPicker(); return; }
+  currentHid = currentHid || households[0].id;
+  await loadHousehold(currentHid);
+  subscribeRealtime();
+  render();
+  if(!window._tick){ window._tick=setInterval(tick,1000); }
+}
+async function loadHouseholds(){
+  const { data }=await sb.from("households").select("*").order("created_at",{ascending:true});
+  households=data||[];
+}
+async function loadHousehold(hid){
+  currentHid=hid;
+  const [{data:bs},{data:fs},{data:sl},{data:dp}]=await Promise.all([
+    sb.from("babies").select("*").eq("household_id",hid).order("sort_order",{ascending:true}),
+    sb.from("sessions").select("*").eq("household_id",hid).order("end_at",{ascending:true}),
+    sb.from("sleeps").select("*").eq("household_id",hid).order("end_at",{ascending:true}),
+    sb.from("diapers").select("*").eq("household_id",hid).order("at",{ascending:true}),
+  ]);
+  babies=bs||[];
+  feeds=(fs||[]).map(mapFeed);
+  sleeps=(sl||[]).map(mapSleep);
+  diapers=(dp||[]).map(mapDiaper);
+  timers={}; notifiedMarker={};
+}
+const mapFeed  = r => ({id:r.id, baby_id:r.baby_id, startISO:r.start_at, endISO:r.end_at, durationMin:r.duration_min, ml:r.ml});
+const mapSleep = r => ({id:r.id, baby_id:r.baby_id, startISO:r.start_at, endISO:r.end_at, durationMin:r.duration_min});
+const mapDiaper= r => ({id:r.id, baby_id:r.baby_id, atISO:r.at, kind:r.kind});
+const currentHousehold = () => households.find(h=>h.id===currentHid) || {alert_gap_min:180, name:""};
+
+function subscribeRealtime(){
+  if(window._chan){ sb.removeChannel(window._chan); }
+  const f="household_id=eq."+currentHid;
+  window._chan = sb.channel("hh-"+currentHid)
+    .on("postgres_changes",{event:"*",schema:"public",table:"sessions",filter:f},p=>{
+      if(p.eventType==="DELETE") feeds=feeds.filter(x=>x.id!==p.old.id);
+      else { const m=mapFeed(p.new); feeds=feeds.filter(x=>x.id!==m.id).concat(m).sort(byEnd); }
+      refresh();
+    })
+    .on("postgres_changes",{event:"*",schema:"public",table:"sleeps",filter:f},p=>{
+      if(p.eventType==="DELETE") sleeps=sleeps.filter(x=>x.id!==p.old.id);
+      else { const m=mapSleep(p.new); sleeps=sleeps.filter(x=>x.id!==m.id).concat(m).sort(byEnd); }
+      refresh();
+    })
+    .on("postgres_changes",{event:"*",schema:"public",table:"diapers",filter:f},p=>{
+      if(p.eventType==="DELETE") diapers=diapers.filter(x=>x.id!==p.old.id);
+      else { const m=mapDiaper(p.new); diapers=diapers.filter(x=>x.id!==m.id).concat(m).sort((a,b)=>new Date(a.atISO)-new Date(b.atISO)); }
+      refresh();
+    })
+    .on("postgres_changes",{event:"*",schema:"public",table:"babies",filter:f},async()=>{
+      const {data}=await sb.from("babies").select("*").eq("household_id",currentHid).order("sort_order",{ascending:true});
+      babies=data||[]; refresh();
+    })
+    .subscribe();
+}
+const byEnd = (a,b)=>new Date(a.endISO)-new Date(b.endISO);
+function refresh(){ if(!modal && !pendingLog) render(); }
+
+/* ================================================================ Household actions */
+async function createHousehold(name){
+  const { data, error }=await sb.from("households").insert({ owner_id:session.user.id, name:name||"New profile" }).select().single();
+  if(error){ alert(error.message); return; }
+  households.push(data); currentHid=data.id; babies=[]; feeds=[]; sleeps=[]; diapers=[]; modal=null;
+  await startApp();
+}
+async function switchHousehold(hid){ if(hid===currentHid) return; await loadHousehold(hid); subscribeRealtime(); tab="track"; render(); }
+async function updateGap(g){ const h=currentHousehold(); h.alert_gap_min=g; await sb.from("households").update({alert_gap_min:g}).eq("id",currentHid); render(); }
+
+/* ================================================================ Baby actions */
+async function addBaby(name,color){
+  const order=babies.length;
+  const { data, error }=await sb.from("babies").insert({ household_id:currentHid, owner_id:session.user.id, name:name||("Baby "+(order+1)), color:color||"A", sort_order:order }).select().single();
+  if(error){ alert(error.message); return; }
+  babies.push(data); modal=null; render();
+}
+async function saveBaby(id,patch){ const b=babies.find(x=>x.id===id); if(!b) return; Object.assign(b,patch); await sb.from("babies").update(patch).eq("id",id); }
+async function removeBaby(id){
+  babies=babies.filter(x=>x.id!==id);
+  feeds=feeds.filter(s=>s.baby_id!==id); sleeps=sleeps.filter(s=>s.baby_id!==id); diapers=diapers.filter(s=>s.baby_id!==id);
+  modal=null; render();
+  await sb.from("babies").delete().eq("id",id);
+}
+
+/* ================================================================ Sleep model (gap-based)
+   Sleep is the background state. It is INFERRED from the gap since the
+   last activity ended. We also persist finished sleep stretches when a
+   feed starts (sleep pauses) so history survives across devices.
+   - Last activity end = latest of: last feed end, last diaper time,
+     last persisted sleep end. (Diapers do NOT break sleep by default,
+     but they count as "activity" only for the feed-pause logic, not
+     for cutting the running sleep clock.)
+================================================================ */
+function lastFeedEnd(id){ const l=feeds.filter(f=>f.baby_id===id); return l.length? l.reduce((a,b)=>new Date(a.endISO)>new Date(b.endISO)?a:b).endISO : null; }
+function lastActivityEnd(id){
+  /* the moment the current background sleep began: end of last feed
+     (diapers don't cut sleep; sleeps are derived, not a floor) */
+  return lastFeedEnd(id);
+}
+function isFeeding(id){ return !!timers[id]; }
+function currentSleepStart(id){
+  /* if feeding, there is no active sleep */
+  if(isFeeding(id)) return null;
+  const lfe=lastFeedEnd(id);
+  /* also don't count time before the baby's first-ever event as sleep */
+  if(!lfe){
+    /* no feeds yet: sleep since first known event, or since profile has data; fall back to null */
+    return null;
+  }
+  return lfe;
+}
+
+/* ================================================================ Feed timer / logging */
+function startFeed(id){
+  /* starting a feed pauses sleep: persist the sleep stretch that just ended */
+  const sleepStart=currentSleepStart(id);
+  timers[id]={startISO:new Date().toISOString()};
+  if(sleepStart){
+    const start=new Date(sleepStart), end=new Date();
+    const mins=(end-start)/60000;
+    if(mins>=5){ /* ignore trivial gaps under 5 min */
+      persistSleep(id, sleepStart, end.toISOString(), mins);
+    }
+  }
+  render();
+}
+function stopFeed(id){
+  const t=timers[id]; if(!t) return;
+  const endISO=new Date().toISOString();
+  const durationMin=(Date.now()-new Date(t.startISO))/60000;
+  delete timers[id];
+  /* sleep auto-resumes: nothing to do - lastFeedEnd now = this feed's end,
+     and the background clock starts counting from here automatically. */
+  pendingLog={babyId:id, startISO:t.startISO, endISO, durationMin}; mlDraft=""; render();
+}
+function quickFeed(id){ const now=new Date().toISOString(); pendingLog={babyId:id, startISO:now, endISO:now, durationMin:0}; mlDraft=""; render(); }
+async function persistSleep(id,startISO,endISO,mins){
+  const { data }=await sb.from("sleeps").insert({ household_id:currentHid, baby_id:id, owner_id:session.user.id, start_at:startISO, end_at:endISO, duration_min:mins }).select().single();
+  if(data) sleeps=sleeps.filter(x=>x.id!==data.id).concat(mapSleep(data)).sort(byEnd);
+}
+async function commitFeed(){
+  if(!pendingLog) return;
+  const ml=parseFloat(mlDraft);
+  const row={ household_id:currentHid, baby_id:pendingLog.babyId, owner_id:session.user.id, start_at:pendingLog.startISO, end_at:pendingLog.endISO, duration_min:pendingLog.durationMin, ml:isNaN(ml)?null:ml };
+  const { data, error }=await sb.from("sessions").insert(row).select().single();
+  if(!error && data) feeds=feeds.filter(x=>x.id!==data.id).concat(mapFeed(data)).sort(byEnd);
+  pendingLog=null; mlDraft=""; render();
+}
+async function deleteFeed(id){ feeds=feeds.filter(x=>x.id!==id); render(); await sb.from("sessions").delete().eq("id",id); }
+async function deleteSleep(id){ sleeps=sleeps.filter(x=>x.id!==id); render(); await sb.from("sleeps").delete().eq("id",id); }
+async function deleteDiaper(id){ diapers=diapers.filter(x=>x.id!==id); render(); await sb.from("diapers").delete().eq("id",id); }
+
+/* ================================================================ Diaper */
+async function logDiaper(id,kind){
+  const row={ household_id:currentHid, baby_id:id, owner_id:session.user.id, at:new Date().toISOString(), kind };
+  const { data }=await sb.from("diapers").insert(row).select().single();
+  if(data) diapers=diapers.filter(x=>x.id!==data.id).concat(mapDiaper(data)).sort((a,b)=>new Date(a.atISO)-new Date(b.atISO));
+  render();
+}
+
+/* ================================================================ Alerts (feed gap) */
+function feedAlert(id){
+  const last=lastFeedEnd(id); if(!last) return {minsSince:null,minsLeft:null,due:false,overdue:false};
+  const minsSince=(Date.now()-new Date(last))/60000, gap=currentHousehold().alert_gap_min||180;
+  const minsLeft=gap-minsSince;
+  return { minsSince, minsLeft, due:minsLeft<=0, overdue:minsLeft<=-30 };
+}
+function askNotify(){ if("Notification" in window && Notification.permission!=="granted") Notification.requestPermission(); }
+function tick(){
+  babies.forEach(b=>{
+    /* feed timer clock */
+    const t=timers[b.id];
+    if(t){ const n=el("feedclock-"+b.id); if(n) n.textContent=fmtClock(Date.now()-new Date(t.startISO).getTime()); }
+    /* live sleep clock (time since last feed end, if not feeding) */
+    const ss=currentSleepStart(b.id); const sc=el("sleepclock-"+b.id);
+    if(sc){ sc.textContent = (ss && !isFeeding(b.id)) ? fmtClock(Date.now()-new Date(ss).getTime()) : (isFeeding(b.id)?"paused":"--:--"); }
+    /* feed banner */
+    const st=feedAlert(b.id), bn=el("banner-"+b.id);
+    if(bn && st.minsSince!=null) applyBanner(bn,b,st);
+    /* notification */
+    const last=lastFeedEnd(b.id);
+    if(last){ const marker=last+":"+(currentHousehold().alert_gap_min||180);
+      if(st.due && notifiedMarker[b.id]!==marker){ notifiedMarker[b.id]=marker;
+        if("Notification" in window && Notification.permission==="granted") new Notification(b.name+" is due for a feed",{body:"Last fed "+fmtDur(st.minsSince)+" ago."});
+      }
+    }
+  });
+}
+function applyBanner(node,b,st){
+  const s=slotOf(b); let text,bg,fg;
+  if(st.overdue){ text="Overdue - last fed "+fmtDur(st.minsSince)+" ago"; bg="#F6DCD9"; fg="#8A2B22"; }
+  else if(st.due){ text="Due now - last fed "+fmtDur(st.minsSince)+" ago"; bg="#F7ECC9"; fg="#7A5A16"; }
+  else { text="Next feed in ~"+fmtDur(st.minsLeft); bg=s.soft; fg=s.ink; }
+  node.textContent=text; node.style.background=bg; node.style.color=fg; node.classList.remove("hide");
+}
+
+/* ================================================================ Analytics */
+function analyticsFor(){
+  /* Build per-day aggregates across feed/sleep/diaper for current babies. */
+  const dayset=new Set();
+  feeds.forEach(f=>dayset.add(dayKey(f.endISO)));
+  sleeps.forEach(s=>dayset.add(dayKey(s.endISO)));
+  diapers.forEach(d=>dayset.add(dayKey(d.atISO)));
+  const days=[...dayset].sort();
+  const per={};
+  babies.forEach(b=>{
+    const bf=feeds.filter(f=>f.baby_id===b.id);
+    const bs=sleeps.filter(s=>s.baby_id===b.id);
+    const bd=diapers.filter(d=>d.baby_id===b.id);
+    const byDay={};
+    days.forEach(dk=>byDay[dk]={ml:0,feeds:0,sleepMin:0,sleepDayMin:0,sleepNightMin:0,wet:0,dirty:0});
+    bf.forEach(f=>{ const k=dayKey(f.endISO); if(byDay[k]){ byDay[k].ml+=f.ml||0; byDay[k].feeds+=1; } });
+    bs.forEach(s=>{ const k=dayKey(s.endISO); if(byDay[k]){ byDay[k].sleepMin+=s.durationMin||0; if(isNight(s.endISO)) byDay[k].sleepNightMin+=s.durationMin||0; else byDay[k].sleepDayMin+=s.durationMin||0; } });
+    bd.forEach(d=>{ const k=dayKey(d.atISO); if(byDay[k]){ if(d.kind==="wet"||d.kind==="both") byDay[k].wet+=1; if(d.kind==="dirty"||d.kind==="both") byDay[k].dirty+=1; } });
+    const daysWithFeed=days.filter(dk=>byDay[dk].feeds>0);
+    const daysWithSleep=days.filter(dk=>byDay[dk].sleepMin>0);
+    const daysWithDiaper=days.filter(dk=>byDay[dk].wet+byDay[dk].dirty>0);
+    const mlS=bf.filter(f=>f.ml!=null);
+    per[b.id]={
+      byDay, days,
+      avgDailyMl: daysWithFeed.length? Math.round(bf.reduce((a,f)=>a+(f.ml||0),0)/daysWithFeed.length):null,
+      avgFeeds: daysWithFeed.length? bf.length/daysWithFeed.length:null,
+      avgPerFeed: mlS.length? Math.round(mlS.reduce((a,f)=>a+f.ml,0)/mlS.length):null,
+      avgSleepMin: daysWithSleep.length? Math.round(bs.reduce((a,s)=>a+(s.durationMin||0),0)/daysWithSleep.length):null,
+      avgNightMin: daysWithSleep.length? Math.round(bs.filter(s=>isNight(s.endISO)).reduce((a,s)=>a+(s.durationMin||0),0)/daysWithSleep.length):null,
+      avgDiapers: daysWithDiaper.length? ((bd.length)/daysWithDiaper.length):null,
+      avgWet: daysWithDiaper.length? (bd.filter(d=>d.kind==="wet"||d.kind==="both").length/daysWithDiaper.length):null,
+      totalFeeds:bf.length, totalSleeps:bs.length, totalDiapers:bd.length,
+    };
+  });
+  return { days, per };
+}
+
+/* ================================================================ Local data assistant
+   Answers questions about the current profile's logged data. No LLM;
+   pattern-matches common questions and computes from the arrays. */
+function assistantAnswer(qRaw){
+  const q=qRaw.toLowerCase().trim();
+  if(!q) return "Ask me things like: \"when did the last feed happen?\", \"how much sleep today?\", \"how many diapers today?\", or \"how is Baby A vs standard?\"";
+  /* resolve a baby if named */
+  let baby=babies.find(b=>q.includes(b.name.toLowerCase()));
+  const one = baby || (babies.length===1?babies[0]:null);
+  const nameOf=b=>b?b.name:"";
+  const today=dayKey(new Date().toISOString());
+  const a=analyticsFor();
+
+  const lastOf=(arr,tsKey)=> arr.length? arr.reduce((x,y)=>new Date(x[tsKey])>new Date(y[tsKey])?x:y):null;
+
+  /* LAST FEED */
+  if(q.includes("last")&&q.includes("feed")){
+    const list=feeds.filter(f=>!one||f.baby_id===one.id);
+    const last=lastOf(list,"endISO");
+    if(!last) return "No feeds logged yet"+(one?" for "+nameOf(one):"")+".";
+    const b=babies.find(x=>x.id===last.baby_id);
+    const mins=(Date.now()-new Date(last.endISO))/60000;
+    return `${nameOf(b)} last fed at ${fmtTime(last.endISO)} (${fmtDur(mins)} ago)${last.ml!=null?", "+last.ml+" ml":""}.`;
+  }
+  /* LAST DIAPER */
+  if(q.includes("last")&&(q.includes("diaper")||q.includes("nappy"))){
+    const list=diapers.filter(d=>!one||d.baby_id===one.id);
+    const last=lastOf(list,"atISO");
+    if(!last) return "No diaper changes logged yet"+(one?" for "+nameOf(one):"")+".";
+    const b=babies.find(x=>x.id===last.baby_id);
+    return `${nameOf(b)}'s last change was ${last.kind} at ${fmtTime(last.atISO)}.`;
+  }
+  /* SLEEP TODAY / how much sleep */
+  if(q.includes("sleep")){
+    const targets=one?[one]:babies;
+    return targets.map(b=>{
+      const d=a.per[b.id]; const t=d&&d.byDay[today];
+      const mins=t?t.sleepMin:0;
+      const ad=ageDays(b.dob); const norm=ad!=null?sleepNormFor(ad):null;
+      const cmp=norm?` (guide ${norm.lo}-${norm.hi}h)`:"";
+      return `${nameOf(b)}: ${fmtHrs(mins)} sleep recorded today${cmp}.`;
+    }).join(" ");
+  }
+  /* DIAPERS TODAY / count */
+  if(q.includes("diaper")||q.includes("nappy")){
+    const targets=one?[one]:babies;
+    return targets.map(b=>{
+      const d=a.per[b.id]; const t=d&&d.byDay[today];
+      const wet=t?t.wet:0, dirty=t?t.dirty:0;
+      return `${nameOf(b)}: ${wet+dirty} changes today (${wet} wet, ${dirty} dirty).`;
+    }).join(" ");
+  }
+  /* FEEDS TODAY / how much milk */
+  if(q.includes("feed")||q.includes("milk")||q.includes("ml")){
+    const targets=one?[one]:babies;
+    return targets.map(b=>{
+      const d=a.per[b.id]; const t=d&&d.byDay[today];
+      const ml=t?t.ml:0, n=t?t.feeds:0;
+      return `${nameOf(b)}: ${n} feeds, ${ml} ml today.`;
+    }).join(" ");
+  }
+  /* VS STANDARD */
+  if(q.includes("standard")||q.includes("normal")||q.includes("compare")||q.includes("track")){
+    const targets=one?[one]:babies;
+    return targets.map(b=>{
+      const d=a.per[b.id]; const w=parseFloat(b.weight_kg); const ad=ageDays(b.dob);
+      const parts=[];
+      if(!isNaN(w)&&d.avgDailyMl){ const typ=Math.round(w*ML_PER_KG.typical); parts.push(`milk ${d.avgDailyMl}/${typ} ml/day (${Math.round(d.avgDailyMl/typ*100)}%)`); }
+      if(ad!=null&&d.avgSleepMin){ const nm=sleepNormFor(ad); parts.push(`sleep ${fmtHrs(d.avgSleepMin)} vs ${nm.lo}-${nm.hi}h`); }
+      if(ad!=null&&d.avgDiapers){ const nd=diaperNormFor(ad); parts.push(`diapers ${d.avgDiapers.toFixed(1)} vs ${nd.lo}-${nd.hi}`); }
+      return `${nameOf(b)}: ${parts.length?parts.join("; "):"not enough data yet"}.`;
+    }).join(" ");
+  }
+  return "I can answer about feeds, sleep, and diapers - e.g. \"last feed\", \"sleep today\", \"diapers today\", \"how is "+(babies[0]?babies[0].name:"baby")+" vs standard\". For anything else, check the Insights tab.";
+}
+
+/* ================================================================ Render: picker */
+function renderPicker(){
+  el("app").innerHTML=`
+  <div class="wrap" style="max-width:460px">
+    <header style="text-align:center; margin:20px 0 24px">
+      <h1 class="title fr">Welcome</h1>
+      <p class="sub">Create your first profile. A profile holds one set of babies and their history - make one per family or setup.</p>
+      <p class="sub" style="margin-top:8px">Signed in as ${esc(session.user.email)} - <a href="#" id="signout" style="color:#5B8C7B; font-weight:700">Sign out</a></p>
+    </header>
+    <div class="card">
+      <label class="lbl">Profile name</label>
+      <input id="hhName" class="inp" placeholder="e.g. The Twins" />
+      <button id="hhCreate" class="btn-primary tap" style="width:100%; background:#5B8C7B; margin-top:12px">Create profile</button>
+    </div>
+  </div>`;
+  el("signout").addEventListener("click",e=>{e.preventDefault(); sb.auth.signOut();});
+  const go=()=>createHousehold(el("hhName").value.trim());
+  el("hhCreate").addEventListener("click",go);
+  el("hhName").addEventListener("keydown",e=>{ if(e.key==="Enter") go(); });
+}
+
+/* ================================================================ Render: main */
+function render(){
+  const hhOptions=households.map(x=>`<option value="${x.id}" ${x.id===currentHid?"selected":""}>${esc(x.name)}</option>`).join("");
+  const header=`
+    <header class="noprint" style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; margin-bottom:12px">
+      <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap">
+        <select id="hhSelect" class="hsel">${hhOptions}</select>
+        <button id="hhNew" class="chip tap">+ New</button>
+        <button id="hhManage" class="chip tap">Manage</button>
+      </div>
+      <nav class="tabs">
+        ${["track|Track","insights|Insights","summary|Doctor","assistant|Ask","babies|Babies"].map(t=>{const[k,l]=t.split("|");
+          return `<button class="tabbtn tap ${tab===k?"on":""}" data-tab="${k}">${l}</button>`;}).join("")}
+      </nav>
+    </header>
+    <p class="sub noprint" style="margin:-4px 0 14px">Signed in as ${esc(session.user.email)} - <a href="#" id="signout" style="color:#5B8C7B; font-weight:700">Sign out</a></p>`;
+
+  let body="";
+  if(tab==="track") body=viewTrack();
+  else if(tab==="babies") body=viewBabies();
+  else if(tab==="insights") body=viewInsights();
+  else if(tab==="summary") body=viewSummary();
+  else if(tab==="assistant") body=viewAssistant();
+
+  el("app").innerHTML=`<div class="wrap">${header}${body}</div>` + (pendingLog?sheetFeedHTML():"") + (modal?modalHTML():"");
+
+  el("signout").addEventListener("click",e=>{e.preventDefault(); sb.auth.signOut();});
+  el("hhSelect").addEventListener("change",e=>switchHousehold(e.target.value));
+  el("hhNew").addEventListener("click",()=>{ modal={type:"newHousehold"}; render(); });
+  el("hhManage").addEventListener("click",()=>{ modal={type:"manageHousehold"}; render(); });
+  document.querySelectorAll("[data-tab]").forEach(b=>b.addEventListener("click",()=>{tab=b.dataset.tab; render();}));
+
+  if(tab==="track") wireTrack();
+  else if(tab==="babies") wireBabies();
+  else if(tab==="insights") drawCharts();
+  else if(tab==="summary") wireSummary();
+  else if(tab==="assistant") wireAssistant();
+
+  if(pendingLog) wireSheetFeed();
+  if(modal) wireModal();
+}
+
+/* ================================================================ Track */
+function viewTrack(){
+  const gap=currentHousehold().alert_gap_min||180;
+  const gaps=[90,120,150,180,210,240];
+  const chips=gaps.map(g=>`<button class="chip tap ${gap===g?"on":""}" data-gap="${g}">${fmtDur(g)}</button>`).join("");
+  let cards;
+  if(babies.length===0){
+    cards=`<div class="card" style="text-align:center; padding:30px; color:var(--mute); grid-column:1/-1">No babies in this profile yet. Go to the <b>Babies</b> tab to add one.</div>`;
+  } else cards=babies.map(babyCardHTML).join("");
+  const recent=recentTimeline();
+  return `
+    <section class="card">
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px">
+        <div><div style="font-weight:800; font-size:15px">Feed reminder</div>
+        <div style="color:var(--mute); font-size:13px">Alert me if a baby hasn't fed for...</div></div>
+        <div style="display:flex; gap:6px; flex-wrap:wrap">${chips}
+          <button id="notify" class="chip tap" style="color:var(--mute)">&#128276; Enable alerts</button></div>
+      </div>
+    </section>
+    <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); margin-top:14px">${cards}</div>
+    <section class="card" style="margin-top:14px">
+      <div style="font-weight:800; font-size:15px; margin-bottom:10px">Recent activity</div>${recent}
+    </section>`;
+}
+function babyCardHTML(b){
+  const sl=slotOf(b); const feeding=isFeeding(b.id);
+  const feedElapsed = feeding ? fmtClock(Date.now()-new Date(timers[b.id].startISO).getTime()) : "00:00";
+  const ss=currentSleepStart(b.id);
+  const sleepText = feeding ? "paused" : (ss? fmtClock(Date.now()-new Date(ss).getTime()) : "--:--");
+  return `
+    <div class="card" style="border-top:4px solid ${sl.hex}">
+      <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px">
+        <span class="dot" style="background:${sl.hex}"></span>
+        <div class="fr" style="font-size:20px; font-weight:600; color:${sl.ink}">${esc(b.name)}</div>
+      </div>
+
+      <!-- two live clocks: sleep (background) + feed -->
+      <div style="display:flex; gap:10px; text-align:center; margin:6px 0 10px">
+        <div style="flex:1; background:${sl.soft}; border-radius:12px; padding:10px 6px">
+          <div style="font-size:11px; font-weight:800; color:${sl.ink}; letter-spacing:.04em; text-transform:uppercase">Sleeping</div>
+          <div id="sleepclock-${b.id}" class="fr" style="font-size:26px; font-weight:600; color:${sl.ink}; font-variant-numeric:tabular-nums">${sleepText}</div>
+        </div>
+        <div style="flex:1; background:#F7F3EB; border-radius:12px; padding:10px 6px">
+          <div style="font-size:11px; font-weight:800; color:var(--mute); letter-spacing:.04em; text-transform:uppercase">Feed timer</div>
+          <div id="feedclock-${b.id}" class="fr" style="font-size:26px; font-weight:600; color:${feeding?sl.hex:'#C9C3B4'}; font-variant-numeric:tabular-nums">${feedElapsed}</div>
+        </div>
+      </div>
+
+      <!-- feed controls -->
+      <div style="display:flex; gap:8px; margin-bottom:8px">
+        ${feeding
+          ? `<button data-stopfeed="${b.id}" class="btn-primary tap" style="flex:1; background:${sl.ink}">&#9632; Stop feed &amp; log</button>`
+          : `<button data-startfeed="${b.id}" class="btn-primary tap" style="flex:1; background:${sl.hex}">&#9654; Start feed</button>`}
+        <button data-quickfeed="${b.id}" class="btn-ghost tap">+ Past</button>
+      </div>
+
+      <!-- diaper controls -->
+      <div class="seg" style="margin-bottom:8px">
+        <button data-diaper="${b.id}|wet"   class="segbtn tap">&#128166; Wet</button>
+        <button data-diaper="${b.id}|dirty" class="segbtn tap">&#128169; Dirty</button>
+        <button data-diaper="${b.id}|both"  class="segbtn tap">Both</button>
+      </div>
+
+      <div id="banner-${b.id}" class="banner hide"></div>
+    </div>`;
+}
+function recentTimeline(){
+  /* merge feeds, sleeps, diapers into one recent list */
+  const items=[];
+  feeds.forEach(f=>items.push({t:f.endISO, baby:f.baby_id, kind:"feed", txt:(f.durationMin>=1?fmtDur(f.durationMin)+" - ":"")+(f.ml!=null?f.ml+" ml":"feed"), id:f.id, del:"feed"}));
+  sleeps.forEach(s=>items.push({t:s.endISO, baby:s.baby_id, kind:"sleep", txt:"slept "+fmtDur(s.durationMin), id:s.id, del:"sleep"}));
+  diapers.forEach(d=>items.push({t:d.atISO, baby:d.baby_id, kind:"diaper", txt:d.kind+" diaper", id:d.id, del:"diaper"}));
+  if(!items.length) return '<div style="color:var(--mute); font-size:14px; padding:12px 0">No activity logged yet.</div>';
+  items.sort((a,b)=>new Date(b.t)-new Date(a.t));
+  const icon={feed:"&#127868;", sleep:"&#128564;", diaper:"&#129530;"};
+  return '<div style="display:flex; flex-direction:column; gap:6px">'+items.slice(0,16).map(it=>{
+    const b=babies.find(x=>x.id===it.baby); if(!b) return ""; const sl=slotOf(b);
+    return `<div class="row" style="background:${sl.soft}">
+      <span style="font-size:14px">${icon[it.kind]}</span>
+      <span style="font-weight:700; font-size:13px; color:${sl.ink}; min-width:64px">${esc(b.name)}</span>
+      <span style="font-size:13px">${fmtTime(it.t)}</span>
+      <span style="font-size:13px; color:var(--mute)">${fmtDate(it.t)}</span>
+      <span style="margin-left:auto; font-size:13px; color:var(--mute)">${it.txt}</span>
+      <button data-delitem="${it.del}|${it.id}" title="Delete" style="border:none; background:transparent; color:var(--mute); font-size:16px; line-height:1; padding:0 2px">&times;</button>
+    </div>`;}).join("")+'</div>';
+}
+function wireTrack(){
+  document.querySelectorAll("[data-gap]").forEach(b=>b.addEventListener("click",()=>updateGap(+b.dataset.gap)));
+  el("notify")&&el("notify").addEventListener("click",askNotify);
+  document.querySelectorAll("[data-startfeed]").forEach(b=>b.addEventListener("click",()=>startFeed(b.dataset.startfeed)));
+  document.querySelectorAll("[data-stopfeed]").forEach(b=>b.addEventListener("click",()=>stopFeed(b.dataset.stopfeed)));
+  document.querySelectorAll("[data-quickfeed]").forEach(b=>b.addEventListener("click",()=>quickFeed(b.dataset.quickfeed)));
+  document.querySelectorAll("[data-diaper]").forEach(b=>b.addEventListener("click",()=>{ const[id,kind]=b.dataset.diaper.split("|"); logDiaper(id,kind); }));
+  document.querySelectorAll("[data-delitem]").forEach(b=>b.addEventListener("click",()=>{ const[t,id]=b.dataset.delitem.split("|"); const n=isNaN(+id)?id:+id; if(t==="feed")deleteFeed(n); else if(t==="sleep")deleteSleep(n); else deleteDiaper(n); }));
+  babies.forEach(b=>{ const st=feedAlert(b.id), node=el("banner-"+b.id); if(node && st.minsSince!=null) applyBanner(node,b,st); });
+}
+
+/* ================================================================ Feed ml sheet */
+function sheetFeedHTML(){
+  const b=babies.find(x=>x.id===pendingLog.babyId)||{name:"Baby",color:"A"};
+  const sl=slotOf(b); const quick=[30,60,90,120,150];
+  const durNote=pendingLog.durationMin>=1?"Fed for "+fmtDur(pendingLog.durationMin)+". ":"";
+  return `
+    <div class="sheet-bg" id="sheetBg"><div class="sheet">
+      <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px">
+        <span class="dot" style="background:${sl.hex}"></span>
+        <div class="fr" style="font-size:20px; font-weight:600; color:${sl.ink}">${esc(b.name)}</div>
+      </div>
+      <p style="color:var(--mute); font-size:13px; margin:0 0 6px">${durNote}How much did they take? (ml)</p>
+      <p style="color:#5B8C7B; font-size:12px; margin:0 0 14px; font-weight:700">Sleep resumes automatically now that the feed has ended.</p>
+      <input id="mlInput" class="inp" type="number" inputmode="decimal" placeholder="e.g. 90" style="font-size:22px; font-weight:700" />
+      <div style="display:flex; gap:6px; flex-wrap:wrap; margin:12px 0 16px">
+        ${quick.map(q=>`<button class="tap" data-ml="${q}" style="flex:1; border:1px solid var(--line); background:var(--paper); border-radius:10px; padding:8px; font-weight:700; font-size:14px">${q}</button>`).join("")}
+      </div>
+      <div style="display:flex; gap:10px">
+        <button id="mlSkip" class="tap" style="flex:1; border:1px solid var(--line); background:var(--paper); border-radius:12px; padding:12px; font-weight:700; color:var(--mute)">No ml</button>
+        <button id="mlSave" class="btn-primary tap" style="flex:2; background:${sl.hex}">Save feed</button>
+      </div>
+    </div></div>`;
+}
+function wireSheetFeed(){
+  const inp=el("mlInput"); inp.value=mlDraft; inp.focus();
+  inp.addEventListener("input",()=>mlDraft=inp.value);
+  inp.addEventListener("keydown",e=>{ if(e.key==="Enter") commitFeed(); });
+  document.querySelectorAll("[data-ml]").forEach(b=>b.addEventListener("click",()=>{ mlDraft=b.dataset.ml; inp.value=mlDraft; }));
+  el("mlSkip").addEventListener("click",()=>{ mlDraft=""; commitFeed(); });
+  el("mlSave").addEventListener("click",commitFeed);
+  el("sheetBg").addEventListener("click",e=>{ if(e.target.id==="sheetBg"){ mlDraft=""; commitFeed(); }});
+}
+
+/* ================================================================ Babies */
+function viewBabies(){
+  const cards=babies.map(b=>{
+    const sl=slotOf(b); const d=ageDays(b.dob); const w=parseFloat(b.weight_kg);
+    const band=d!=null?bandFor(d):null;
+    const nMin=!isNaN(w)?Math.round(w*ML_PER_KG.min):null, nTyp=!isNaN(w)?Math.round(w*ML_PER_KG.typical):null, nMax=!isNaN(w)?Math.min(MAX_DAILY_ML,Math.round(w*ML_PER_KG.max)):null;
+    const sn=d!=null?sleepNormFor(d):null, dn=d!=null?diaperNormFor(d):null;
+    const info=d!=null?`<div style="font-size:13px; color:${sl.ink}; font-weight:700">${d} days old - feed band ${band}</div>`:`<div style="font-size:13px; color:var(--mute)">Add DOB to see age bands.</div>`;
+    const need=nTyp!=null?`<div style="margin-top:8px; font-size:13px; color:${sl.ink}">Milk/day: <b>${nMin}-${nMax} ml</b> (~${nTyp})</div>`:`<div style="margin-top:8px; font-size:13px; color:var(--mute)">Add weight for milk estimate.</div>`;
+    const other=d!=null?`<div style="margin-top:4px; font-size:13px; color:${sl.ink}">Sleep/day: <b>${sn.lo}-${sn.hi} h</b> &nbsp;&middot;&nbsp; Diapers/day: <b>${dn.lo}-${dn.hi}</b></div>`:"";
+    return `
+      <div class="card" style="border-top:4px solid ${sl.hex}">
+        <div style="display:flex; align-items:center; gap:8px; margin-bottom:12px">
+          <span class="dot" style="background:${sl.hex}"></span>
+          <input class="inp" data-baby="${b.id}|name" value="${esc(b.name)}" style="font-weight:700; padding:6px 8px; font-family:'Fraunces',serif; font-size:18px; border-color:transparent; background:transparent" />
+          <button data-edit="${b.id}" class="btn-ghost tap" style="padding:6px 10px">Edit</button>
+        </div>
+        <label class="lbl">Date of birth</label>
+        <input class="inp" type="date" data-baby="${b.id}|dob" value="${b.dob||""}" />
+        <label class="lbl" style="margin-top:12px">Current weight (kg)</label>
+        <input class="inp" type="number" inputmode="decimal" step="0.01" placeholder="e.g. 4.2" data-baby="${b.id}|weight_kg" value="${b.weight_kg??""}" />
+        <div style="margin-top:14px; background:${sl.soft}; border-radius:12px; padding:14px">${info}${need}${other}
+          <div style="color:var(--mute); font-size:12px; margin-top:6px">Guidance: ~150 ml/kg/day; sleep per AAP/AASM; diapers per AAP. Not medical advice.</div></div>
+      </div>`;
+  }).join("");
+  const addBtn = babies.length<4
+    ? `<button id="addBaby" class="card tap" style="border:2px dashed var(--line); background:transparent; color:var(--mute); font-weight:800; font-size:15px; display:flex; align-items:center; justify-content:center; min-height:120px">+ Add a baby</button>`
+    : `<div class="card" style="color:var(--mute); font-size:13px; display:flex; align-items:center; justify-content:center">Up to 4 babies per profile.</div>`;
+  return `<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(300px,1fr))">${cards}${addBtn}
+    <p class="disc" style="grid-column:1/-1; margin:4px 4px 0">Reference figures follow AAP/AASM population guidance. Every baby differs - cluster feeding, growth spurts, and variable sleep are normal, and premature twins often track differently. This is not medical advice; your pediatrician's checks are the real guide.</p></div>`;
+}
+function wireBabies(){
+  document.querySelectorAll("[data-baby]").forEach(inp=>{
+    inp.addEventListener("change",()=>{ const[id,field]=inp.dataset.baby.split("|"); const val=field==="name"?(inp.value.trim()||"Baby"):inp.value; saveBaby(id,{[field]:val}); });
+  });
+  el("addBaby")&&el("addBaby").addEventListener("click",()=>{ modal={type:"newBaby"}; render(); });
+  document.querySelectorAll("[data-edit]").forEach(b=>b.addEventListener("click",()=>{ modal={type:"editBaby", id:b.dataset.edit}; render(); }));
+}
+
+/* ================================================================ Insights */
+function viewInsights(){
+  if(babies.length===0) return `<div class="card" style="text-align:center; padding:40px; color:var(--mute)">Add a baby first (Babies tab).</div>`;
+  const a=analyticsFor(); window._a=a;
+  if(a.days.length===0) return `<div class="card" style="text-align:center; padding:40px; color:var(--mute)"><div class="fr" style="font-size:22px; color:var(--ink); margin-bottom:6px">Nothing to chart yet</div>Log a few feeds, sleeps, or diapers and your patterns will appear here.</div>`;
+  const stat=babies.map(b=>{
+    const sl=slotOf(b); const d=a.per[b.id]; const w=parseFloat(b.weight_kg); const ad=ageDays(b.dob);
+    const nTyp=!isNaN(w)?Math.round(w*ML_PER_KG.typical):null;
+    const pct=(nTyp&&d.avgDailyMl)?Math.round(d.avgDailyMl/nTyp*100):null;
+    const m=(l,v)=>`<div><div class="metricv fr" style="color:${sl.hex}">${v}</div><div class="metricl">${l}</div></div>`;
+    return `<div class="card" style="border-top:4px solid ${sl.hex}">
+      <div style="display:flex; align-items:center; gap:8px; margin-bottom:10px"><span class="dot" style="background:${sl.hex}"></span>
+        <div class="fr" style="font-size:18px; font-weight:600; color:${sl.ink}">${esc(b.name)}</div></div>
+      <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px">
+        ${m("Milk/day", d.avgDailyMl?d.avgDailyMl+" ml":"-")}
+        ${m("Feeds/day", d.avgFeeds?d.avgFeeds.toFixed(1):"-")}
+        ${m("Sleep/day", d.avgSleepMin?fmtHrs(d.avgSleepMin):"-")}
+        ${m("Night sleep", d.avgNightMin?fmtHrs(d.avgNightMin):"-")}
+        ${m("Diapers/day", d.avgDiapers?d.avgDiapers.toFixed(1):"-")}
+        ${m("vs milk std", pct!=null?pct+"%":"-")}
+      </div></div>`;
+  }).join("");
+  const svaMilk=babies.map(b=>{ const w=parseFloat(b.weight_kg); const d=a.per[b.id];
+    if(isNaN(w)||!d.avgDailyMl) return `<div class="card"><div style="font-weight:800; font-size:15px; margin-bottom:10px">${esc(b.name)}: milk vs standard</div><div style="color:var(--mute); font-size:13px; padding:8px 0">${isNaN(w)?"Add weight (Babies tab).":"Log feeds with ml."}</div></div>`;
+    return `<div class="card"><div style="font-weight:800; font-size:15px; margin-bottom:10px">${esc(b.name)}: milk vs standard</div><div class="chart-box" style="height:170px"><canvas id="svaMilk-${b.id}"></canvas></div></div>`;
+  }).join("");
+  const svaSleep=babies.map(b=>{ const ad=ageDays(b.dob); const d=a.per[b.id];
+    if(ad==null||!d.avgSleepMin) return `<div class="card"><div style="font-weight:800; font-size:15px; margin-bottom:10px">${esc(b.name)}: sleep vs standard</div><div style="color:var(--mute); font-size:13px; padding:8px 0">${ad==null?"Add DOB (Babies tab).":"Log some sleep (auto-tracked between feeds)."}</div></div>`;
+    return `<div class="card"><div style="font-weight:800; font-size:15px; margin-bottom:10px">${esc(b.name)}: sleep vs standard</div><div class="chart-box" style="height:170px"><canvas id="svaSleep-${b.id}"></canvas></div></div>`;
+  }).join("");
+  return `
+    <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(260px,1fr))">${stat}</div>
+    <section class="card" style="margin-top:14px"><div style="font-weight:800; font-size:15px; margin-bottom:10px">Daily milk (ml)</div><div class="chart-box" style="height:230px"><canvas id="cDailyMl"></canvas></div></section>
+    <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); margin-top:14px">
+      <section class="card"><div style="font-weight:800; font-size:15px; margin-bottom:10px">Daily sleep (hours, day vs night)</div><div class="chart-box" style="height:220px"><canvas id="cSleep"></canvas></div></section>
+      <section class="card"><div style="font-weight:800; font-size:15px; margin-bottom:10px">Daily diapers (wet vs dirty)</div><div class="chart-box" style="height:220px"><canvas id="cDiaper"></canvas></div></section>
+    </div>
+    <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); margin-top:14px">${svaMilk}</div>
+    <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); margin-top:14px">${svaSleep}</div>
+    <section class="card" style="margin-top:14px"><div style="font-weight:800; font-size:15px; margin-bottom:2px">When feeds happen (all days)</div>
+      <p style="color:var(--mute); font-size:12px; margin:0 0 8px">Feeds by hour - spot cluster-feeding windows.</p><div class="chart-box" style="height:200px"><canvas id="cHourly"></canvas></div></section>
+    <p class="disc" style="margin:16px 4px 0">Reference ranges are population averages, not targets for your babies. This tool is not medical advice - always defer to your pediatrician.</p>`;
+}
+function drawCharts(){
+  Object.values(charts).forEach(c=>{try{c.destroy();}catch(e){}}); charts={};
+  const a=window._a; if(!a) return;
+  const labels=a.days.map(d=>fmtDate(d));
+  const gridC="#E8E1D4", tickC="#8A8578";
+  const base={responsive:true, maintainAspectRatio:false, plugins:{legend:{labels:{font:{family:"Nunito",size:12}, color:"#33302A"}}},
+    scales:{x:{grid:{color:gridC}, ticks:{color:tickC, font:{size:11}}}, y:{grid:{color:gridC}, ticks:{color:tickC, font:{size:11}}, beginAtZero:true}}};
+  const dsMl=babies.map(b=>({label:b.name, data:a.days.map(dk=>a.per[b.id].byDay[dk].ml), backgroundColor:slotOf(b).hex, borderRadius:6}));
+  if(el("cDailyMl")) charts.m=new Chart(el("cDailyMl"),{type:"bar", data:{labels, datasets:dsMl}, options:base});
+  /* sleep stacked day/night for first baby-focused view: stack per baby's day+night */
+  const dsSleep=[];
+  babies.forEach(b=>{
+    dsSleep.push({label:b.name+" day", data:a.days.map(dk=>+(a.per[b.id].byDay[dk].sleepDayMin/60).toFixed(2)), backgroundColor:slotOf(b).hex, stack:b.id});
+    dsSleep.push({label:b.name+" night", data:a.days.map(dk=>+(a.per[b.id].byDay[dk].sleepNightMin/60).toFixed(2)), backgroundColor:slotOf(b).ink, stack:b.id});
+  });
+  if(el("cSleep")) charts.s=new Chart(el("cSleep"),{type:"bar", data:{labels, datasets:dsSleep}, options:{...base, scales:{x:{...base.scales.x, stacked:true}, y:{...base.scales.y, stacked:true}}}});
+  const dsDia=[];
+  babies.forEach(b=>{
+    dsDia.push({label:b.name+" wet", data:a.days.map(dk=>a.per[b.id].byDay[dk].wet), backgroundColor:slotOf(b).hex, stack:b.id});
+    dsDia.push({label:b.name+" dirty", data:a.days.map(dk=>a.per[b.id].byDay[dk].dirty), backgroundColor:slotOf(b).ink, stack:b.id});
+  });
+  if(el("cDiaper")) charts.di=new Chart(el("cDiaper"),{type:"bar", data:{labels, datasets:dsDia}, options:{...base, scales:{x:{...base.scales.x, stacked:true}, y:{...base.scales.y, stacked:true}}}});
+  /* hourly feeds */
+  const hourly=Array.from({length:24},(_,h)=>h);
+  const dsH=babies.map(b=>({label:b.name, data:hourly.map(h=>feeds.filter(f=>f.baby_id===b.id && new Date(f.endISO).getHours()===h).length), backgroundColor:slotOf(b).hex, stack:"h", borderRadius:3}));
+  if(el("cHourly")) charts.h=new Chart(el("cHourly"),{type:"bar", data:{labels:hourly, datasets:dsH}, options:{...base, scales:{x:{...base.scales.x, stacked:true}, y:{...base.scales.y, stacked:true}}}});
+  /* sva milk */
+  babies.forEach(b=>{ const cv=el("svaMilk-"+b.id); if(!cv) return; const w=parseFloat(b.weight_kg); const d=a.per[b.id]; if(isNaN(w)||!d.avgDailyMl) return;
+    charts["svaM"+b.id]=new Chart(cv,{type:"bar", data:{labels:["Std min","Std typ","Std max","Actual"], datasets:[{data:[Math.round(w*ML_PER_KG.min),Math.round(w*ML_PER_KG.typical),Math.min(MAX_DAILY_ML,Math.round(w*ML_PER_KG.max)),d.avgDailyMl], backgroundColor:["#CFC8B8","#CFC8B8","#CFC8B8",slotOf(b).hex], borderRadius:6}]}, options:{...base, indexAxis:"y", plugins:{legend:{display:false}}}});
+  });
+  /* sva sleep */
+  babies.forEach(b=>{ const cv=el("svaSleep-"+b.id); if(!cv) return; const ad=ageDays(b.dob); const d=a.per[b.id]; if(ad==null||!d.avgSleepMin) return; const nm=sleepNormFor(ad);
+    charts["svaS"+b.id]=new Chart(cv,{type:"bar", data:{labels:["Std min","Std max","Actual"], datasets:[{data:[nm.lo,nm.hi,+(d.avgSleepMin/60).toFixed(1)], backgroundColor:["#CFC8B8","#CFC8B8",slotOf(b).hex], borderRadius:6}]}, options:{...base, indexAxis:"y", plugins:{legend:{display:false}}}});
+  });
+}
+
+/* ================================================================ Doctor summary */
+function viewSummary(){
+  if(babies.length===0) return `<div class="card" style="text-align:center; padding:40px; color:var(--mute)">Add a baby first (Babies tab).</div>`;
+  summaryBabyId = summaryBabyId && babies.find(b=>b.id===summaryBabyId) ? summaryBabyId : babies[0].id;
+  const picker = babies.length>1 ? `<div class="seg noprint" style="margin-bottom:14px; max-width:420px">${babies.map(b=>`<button class="segbtn tap ${b.id===summaryBabyId?'on':''}" data-sumbaby="${b.id}" style="${b.id===summaryBabyId?'background:'+slotOf(b).hex+';color:#fff;border-color:'+slotOf(b).hex:''}">${esc(b.name)}</button>`).join("")}</div>` : "";
+  const b=babies.find(x=>x.id===summaryBabyId);
+  const a=analyticsFor(); const d=a.per[b.id];
+  const ad=ageDays(b.dob); const w=parseFloat(b.weight_kg);
+  const nTyp=!isNaN(w)?Math.round(w*ML_PER_KG.typical):null;
+  const sn=ad!=null?sleepNormFor(ad):null, dn=ad!=null?diaperNormFor(ad):null;
+  const range = a.days.length? fmtDate(a.days[0])+" - "+fmtDate(a.days[a.days.length-1]) : "no data yet";
+  const rowsHtml = a.days.length? a.days.slice(-14).map(dk=>{ const x=d.byDay[dk];
+    return `<tr><td style="padding:5px 8px; border-bottom:1px solid #eee">${fmtDate(dk)}</td>
+      <td style="padding:5px 8px; border-bottom:1px solid #eee; text-align:right">${x.feeds}</td>
+      <td style="padding:5px 8px; border-bottom:1px solid #eee; text-align:right">${x.ml||0}</td>
+      <td style="padding:5px 8px; border-bottom:1px solid #eee; text-align:right">${fmtHrs(x.sleepMin)}</td>
+      <td style="padding:5px 8px; border-bottom:1px solid #eee; text-align:right">${x.wet}</td>
+      <td style="padding:5px 8px; border-bottom:1px solid #eee; text-align:right">${x.dirty}</td></tr>`;}).join("") : "";
+  const line=(l,v,ref)=>`<div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid #f0ece2"><span style="color:var(--mute); font-weight:700">${l}</span><span style="font-weight:700">${v}${ref?` <span style="color:var(--mute); font-weight:600">(${ref})</span>`:""}</span></div>`;
+  return `
+    ${picker}
+    <div class="noprint" style="display:flex; justify-content:flex-end; margin-bottom:10px">
+      <button id="printSummary" class="btn-primary tap" style="background:#5B8C7B; padding:10px 18px">&#128424; Print / Save as PDF</button>
+    </div>
+    <div class="card" id="summarySheet">
+      <div style="display:flex; justify-content:space-between; align-items:baseline; flex-wrap:wrap; gap:8px; border-bottom:2px solid var(--ink); padding-bottom:10px; margin-bottom:14px">
+        <div><div class="fr" style="font-size:24px; font-weight:600">${esc(b.name)} - Care Summary</div>
+          <div style="color:var(--mute); font-size:13px">For pediatric follow-up &middot; generated ${new Date().toLocaleDateString()}</div></div>
+        <div style="text-align:right; font-size:13px; color:var(--mute)">Data range<br><b style="color:var(--ink)">${range}</b></div>
+      </div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:20px">
+        <div>
+          <div style="font-weight:800; margin-bottom:6px">Baby</div>
+          ${line("Age", ad!=null?ad+" days":"-")}
+          ${line("Weight", !isNaN(w)?w+" kg":"-")}
+          <div style="font-weight:800; margin:14px 0 6px">Feeding (daily avg)</div>
+          ${line("Milk", d.avgDailyMl?d.avgDailyMl+" ml":"-", nTyp?"std ~"+nTyp+" ml":"")}
+          ${line("Feeds", d.avgFeeds?d.avgFeeds.toFixed(1):"-")}
+          ${line("Per feed", d.avgPerFeed?d.avgPerFeed+" ml":"-")}
+        </div>
+        <div>
+          <div style="font-weight:800; margin-bottom:6px">Sleep (daily avg)</div>
+          ${line("Total", d.avgSleepMin?fmtHrs(d.avgSleepMin):"-", sn?sn.lo+"-"+sn.hi+" h":"")}
+          ${line("Night", d.avgNightMin?fmtHrs(d.avgNightMin):"-")}
+          <div style="font-weight:800; margin:14px 0 6px">Diapers (daily avg)</div>
+          ${line("Total", d.avgDiapers?d.avgDiapers.toFixed(1):"-", dn?dn.lo+"-"+dn.hi:"")}
+          ${line("Wet", d.avgWet?d.avgWet.toFixed(1):"-")}
+        </div>
+      </div>
+      ${a.days.length?`<div style="font-weight:800; margin:18px 0 8px">Last ${Math.min(14,a.days.length)} days</div>
+      <table style="width:100%; border-collapse:collapse; font-size:13px">
+        <thead><tr style="text-align:right; color:var(--mute)">
+          <th style="padding:5px 8px; text-align:left">Date</th><th style="padding:5px 8px">Feeds</th><th style="padding:5px 8px">ml</th><th style="padding:5px 8px">Sleep</th><th style="padding:5px 8px">Wet</th><th style="padding:5px 8px">Dirty</th>
+        </tr></thead><tbody>${rowsHtml}</tbody></table>`:""}
+      <p class="disc" style="margin-top:16px">Generated by Baby Care Monitor from caregiver-entered logs. Reference ranges are AAP/AASM population averages, not diagnostic thresholds. Not a medical device.</p>
+    </div>`;
+}
+function wireSummary(){
+  document.querySelectorAll("[data-sumbaby]").forEach(b=>b.addEventListener("click",()=>{ summaryBabyId=b.dataset.sumbaby; render(); }));
+  el("printSummary")&&el("printSummary").addEventListener("click",()=>window.print());
+}
+
+/* ================================================================ Assistant */
+function viewAssistant(){
+  const examples=["When did the last feed happen?","How much sleep today?","How many diapers today?", babies[0]?("How is "+babies[0].name+" vs standard?"):"How is baby vs standard?"];
+  return `
+    <div class="card">
+      <div class="fr" style="font-size:20px; font-weight:600; margin-bottom:4px">Ask about your data</div>
+      <p class="sub" style="margin:0 0 14px">Answers come from this profile's logs, computed on your device. No data leaves the app.</p>
+      <div style="display:flex; gap:8px">
+        <input id="askInput" class="inp" placeholder="Ask a question..." />
+        <button id="askBtn" class="btn-primary tap" style="background:#5B8C7B; white-space:nowrap; padding:12px 18px">Ask</button>
+      </div>
+      <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:10px">
+        ${examples.map(e=>`<button class="chip tap" data-ask="${esc(e)}">${esc(e)}</button>`).join("")}
+      </div>
+      <div id="askAnswer" style="margin-top:16px; background:#F7F3EB; border-radius:12px; padding:16px; font-size:15px; font-weight:600; min-height:52px; color:var(--ink); line-height:1.5">${esc(assistantAnswer(""))}</div>
+      <p class="disc" style="margin-top:12px">This assistant summarizes your own logged data. It isn't a large language model and doesn't give medical advice. For clinical questions, ask your pediatrician.</p>
+    </div>`;
+}
+function wireAssistant(){
+  const run=()=>{ el("askAnswer").textContent=assistantAnswer(el("askInput").value); };
+  el("askBtn").addEventListener("click",run);
+  el("askInput").addEventListener("keydown",e=>{ if(e.key==="Enter") run(); });
+  document.querySelectorAll("[data-ask]").forEach(b=>b.addEventListener("click",()=>{ el("askInput").value=b.dataset.ask; run(); }));
+}
+
+/* ================================================================ Modals */
+function modalHTML(){
+  if(modal.type==="newHousehold") return simpleModal("New profile", `<label class="lbl">Profile name</label><input id="mName" class="inp" placeholder="e.g. Grandma's house" />`, "Create");
+  if(modal.type==="manageHousehold"){ const h=currentHousehold();
+    return simpleModal("Manage profile", `<label class="lbl">Rename</label><input id="mName" class="inp" value="${esc(h.name)}" />
+      <button id="mDelete" class="tap" style="width:100%; margin-top:16px; border:1px solid #E7C9C4; background:#FBEEEC; color:#8A2B22; border-radius:12px; padding:11px; font-weight:800">Delete this profile</button>
+      <p class="disc" style="margin-top:8px">Deleting removes this profile and all its babies, feeds, sleeps, and diapers. Can't be undone.</p>`, "Save");
+  }
+  if(modal.type==="newBaby"){ const used=babies.map(b=>b.color); const free=["A","B","C","D"].find(c=>!used.includes(c))||"A";
+    return simpleModal("Add a baby", `<label class="lbl">Name</label><input id="mName" class="inp" placeholder="e.g. Baby A" /><label class="lbl" style="margin-top:12px">Colour</label>${colorPicker(free)}`, "Add");
+  }
+  if(modal.type==="editBaby"){ const b=babies.find(x=>x.id===modal.id)||{name:"",color:"A"};
+    return simpleModal("Edit baby", `<label class="lbl">Name</label><input id="mName" class="inp" value="${esc(b.name)}" /><label class="lbl" style="margin-top:12px">Colour</label>${colorPicker(b.color)}
+      <button id="mRemove" class="tap" style="width:100%; margin-top:16px; border:1px solid #E7C9C4; background:#FBEEEC; color:#8A2B22; border-radius:12px; padding:11px; font-weight:800">Remove baby</button>
+      <p class="disc" style="margin-top:8px">Removing deletes this baby and all their logs from this profile.</p>`, "Save");
+  }
+  return "";
+}
+function colorPicker(sel){ return `<div id="mColors" style="display:flex; gap:8px">`+["A","B","C","D"].map(c=>`<button data-color="${c}" class="tap" style="flex:1; height:42px; border-radius:10px; border:3px solid ${c===sel?"var(--ink)":"transparent"}; background:${SLOTS[c].hex}"></button>`).join("")+`</div><input type="hidden" id="mColor" value="${sel}" />`; }
+function simpleModal(title, inner, okLabel){
+  return `<div class="sheet-bg" id="modalBg"><div class="sheet">
+    <div class="fr" style="font-size:20px; font-weight:600; margin-bottom:12px">${title}</div>${inner}
+    <div style="display:flex; gap:10px; margin-top:18px">
+      <button id="mCancel" class="tap" style="flex:1; border:1px solid var(--line); background:var(--paper); border-radius:12px; padding:12px; font-weight:700; color:var(--mute)">Cancel</button>
+      <button id="mOk" class="btn-primary tap" style="flex:2; background:#5B8C7B">${okLabel}</button>
+    </div></div></div>`;
+}
+function wireModal(){
+  const close=()=>{ modal=null; render(); };
+  el("modalBg").addEventListener("click",e=>{ if(e.target.id==="modalBg") close(); });
+  el("mCancel").addEventListener("click",close);
+  const nameEl=el("mName"); if(nameEl) nameEl.focus();
+  document.querySelectorAll("[data-color]").forEach(btn=>btn.addEventListener("click",()=>{ el("mColor").value=btn.dataset.color; document.querySelectorAll("[data-color]").forEach(x=>x.style.borderColor="transparent"); btn.style.borderColor="var(--ink)"; }));
+  el("mOk").addEventListener("click",async()=>{
+    if(modal.type==="newHousehold"){ await createHousehold(el("mName").value.trim()); }
+    else if(modal.type==="manageHousehold"){ const name=el("mName").value.trim()||currentHousehold().name; const h=currentHousehold(); h.name=name; await sb.from("households").update({name}).eq("id",currentHid); modal=null; render(); }
+    else if(modal.type==="newBaby"){ await addBaby(el("mName").value.trim(), el("mColor").value); }
+    else if(modal.type==="editBaby"){ await saveBaby(modal.id,{ name:el("mName").value.trim()||"Baby", color:el("mColor").value }); modal=null; render(); }
+  });
+  const del=el("mDelete"); if(del) del.addEventListener("click",async()=>{ if(!confirm("Delete this whole profile and everything in it?")) return; await sb.from("households").delete().eq("id",currentHid); households=households.filter(h=>h.id!==currentHid); currentHid=households[0]?households[0].id:null; modal=null; if(currentHid) startApp(); else renderPicker(); });
+  const rem=el("mRemove"); if(rem) rem.addEventListener("click",()=>{ if(confirm("Remove this baby and their logs?")) removeBaby(modal.id); });
+}
+
+/* ---------- go ---------- */
+if(window.supabase && window.supabase.createClient) boot();
+else window.addEventListener("load", boot);
+</script>
+</body>
+</html>
