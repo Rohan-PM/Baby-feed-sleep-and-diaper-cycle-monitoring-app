@@ -1,0 +1,908 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+<title>Baby Care Monitor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.0/dist/umd/supabase.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+<style>
+  :root{ --cream:#FBF8F2; --paper:#fff; --line:#E8E1D4; --mute:#8A8578; --ink:#33302A; --green:#5B8C7B; }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{background:var(--cream); color:var(--ink); font-family:'Nunito',system-ui,sans-serif; -webkit-tap-highlight-color:transparent}
+  .fr{font-family:'Fraunces',Georgia,serif}
+  button{cursor:pointer; font-family:inherit}
+  a{color:inherit}
+  .tap{transition:transform .06s ease}
+  .tap:active{transform:scale(.96)}
+  @media (prefers-reduced-motion:reduce){.tap{transition:none}}
+  input:focus,button:focus-visible,select:focus,textarea:focus{outline:2px solid var(--ink); outline-offset:2px}
+  input,select,textarea{font-family:inherit}
+  .wrap{max-width:960px; margin:0 auto; padding:16px 14px 100px}
+  .card{background:var(--paper); border:1px solid var(--line); border-radius:18px; padding:16px; box-shadow:0 1px 2px rgba(60,50,30,.03)}
+  .grid{display:grid; gap:14px}
+  .hide{display:none !important}
+  h1.title{font-size:24px; font-weight:600; letter-spacing:-.02em; margin:0}
+  .sub{margin:2px 0 0; color:var(--mute); font-size:13px}
+  .chip{border:1px solid var(--line); background:var(--paper); color:var(--ink); border-radius:999px; padding:6px 12px; font-size:13px; font-weight:700}
+  .chip.on{border-color:var(--ink); background:var(--ink); color:var(--cream)}
+  .lbl{display:block; font-size:13px; font-weight:700; color:var(--mute); margin-bottom:5px}
+  .inp{width:100%; font-size:16px; padding:11px 12px; border-radius:10px; border:1.5px solid var(--line); font-weight:600; color:var(--ink)}
+  .metricv{font-size:22px; font-weight:600; line-height:1.1}
+  .metricl{font-size:12px; color:var(--mute); font-weight:600}
+  .row{display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:10px}
+  .dot{width:12px; height:12px; border-radius:999px; flex:none}
+  .btn-primary{border:none; border-radius:12px; padding:13px; font-weight:800; font-size:15px; color:#fff}
+  .btn-ghost{border:1px solid var(--line); border-radius:12px; padding:12px 14px; font-weight:700; font-size:13px; background:var(--paper); color:var(--ink)}
+  .sheet-bg{position:fixed; inset:0; background:rgba(30,28,24,.4); display:flex; align-items:flex-end; justify-content:center; z-index:50}
+  .sheet{background:var(--paper); width:100%; max-width:480px; border-radius:22px 22px 0 0; padding:22px; box-shadow:0 -8px 40px rgba(0,0,0,.15); max-height:90vh; overflow:auto}
+  .disc{color:var(--mute); font-size:12px; line-height:1.6}
+  .chart-box{position:relative; width:100%}
+  .hsel{border:1px solid var(--line); background:var(--paper); border-radius:10px; padding:9px 10px; font-size:14px; font-weight:700; color:var(--ink); max-width:200px}
+  /* bottom tab bar */
+  .tabbar{position:fixed; left:0; right:0; bottom:0; background:rgba(255,255,255,.96); backdrop-filter:blur(8px); border-top:1px solid var(--line); display:flex; justify-content:space-around; padding:6px 4px calc(6px + env(safe-area-inset-bottom)); z-index:40}
+  .tabbtn{border:none; background:transparent; color:var(--mute); font-size:11px; font-weight:800; display:flex; flex-direction:column; align-items:center; gap:2px; padding:6px 8px; border-radius:12px; min-width:60px}
+  .tabbtn .ic{font-size:20px; line-height:1}
+  .tabbtn.on{color:var(--ink)}
+  .tabbtn.on .ic{transform:translateY(-1px)}
+  .statusline{font-size:13px; color:var(--mute); font-weight:700}
+  .bigbtn{border:none; border-radius:14px; padding:14px 8px; font-weight:800; font-size:14px; color:#fff; display:flex; flex-direction:column; align-items:center; gap:3px; line-height:1.1}
+  .bigbtn .ic{font-size:19px}
+  .statuspill{display:inline-flex; align-items:center; gap:6px; padding:6px 12px; border-radius:999px; font-weight:800; font-size:13px}
+  @media print{ body{background:#fff} .noprint{display:none !important} .wrap{padding:0; max-width:none} .card{box-shadow:none; border:1px solid #ddd; break-inside:avoid} .tabbar{display:none} }
+</style>
+</head>
+<body>
+
+<!-- ========================== CONFIG ========================== -->
+<script>
+  window.SUPABASE_URL = "https://ugfxsciqepkznxfjbpry.supabase.co";
+  window.SUPABASE_PUBLISHABLE_KEY = "sb_publishable_E81yCEDtzVfjulGyPNsZyw_5kgGFv85";
+</script>
+<!-- =========================================================== -->
+
+<div id="app"></div>
+<script>
+/* ================================================================
+   Baby Care Monitor v4 - mother-first rebuild
+   Feeding (breast/expressed/formula) + always-on Sleep + Diaper +
+   Weight/growth (WHO percentiles) + Prescriptions + Doctor summary
+   with vaccination reminder + local assistant. No build, no Node.
+   ================================================================ */
+
+/* ---------- Feeding reference ---------- */
+const ML_PER_KG = { min:120, typical:150, max:180 };
+const MAX_DAILY_ML = 960;
+/* Sleep norms (AAP/AASM h per 24h) */
+const SLEEP_NORMS=[{max:120,lo:14,hi:17},{max:365,lo:12,hi:16},{max:730,lo:11,hi:14},{max:99999,lo:10,hi:13}];
+const sleepNormFor=d=>SLEEP_NORMS.find(s=>d<=s.max)||SLEEP_NORMS[SLEEP_NORMS.length-1];
+/* Diaper norms per day */
+const DIAPER_NORMS=[{max:120,lo:8,hi:12},{max:365,lo:6,hi:10},{max:99999,lo:5,hi:8}];
+const diaperNormFor=d=>DIAPER_NORMS.find(s=>d<=s.max)||DIAPER_NORMS[DIAPER_NORMS.length-1];
+/* Well-baby visit schedule (months) - India/AAP aligned */
+const VISIT_MONTHS=[1.5,2,4,6,9,12,15,18,24];
+
+/* ---------- WHO weight-for-age LMS (monthly anchors, 0-24 mo) ----------
+   Source: WHO Child Growth Standards. We interpolate between monthly
+   anchors and compute percentile via Z=((X/M)^L - 1)/(L*S). */
+const WHO_WFA = {
+  boy:[ /* month:[L,M,S] */
+    [0,0.3487,3.3464,0.14602],[1,0.2297,4.4709,0.13395],[2,0.1970,5.5675,0.12385],
+    [3,0.1738,6.3762,0.11727],[4,0.1553,7.0023,0.11316],[5,0.1395,7.5105,0.11080],
+    [6,0.1257,7.9340,0.10958],[7,0.1134,8.2970,0.10902],[8,0.1021,8.6151,0.10882],
+    [9,0.0917,8.9014,0.10881],[10,0.0820,9.1649,0.10891],[11,0.0730,9.4122,0.10906],
+    [12,0.0644,9.6479,0.10925],[13,0.0563,9.8749,0.10949],[14,0.0487,10.0953,0.10976],
+    [15,0.0413,10.3108,0.11007],[16,0.0343,10.5228,0.11041],[17,0.0275,10.7319,0.11079],
+    [18,0.0211,10.9385,0.11119],[19,0.0148,11.1430,0.11164],[20,0.0087,11.3462,0.11211],
+    [21,0.0029,11.5486,0.11261],[22,-0.0028,11.7504,0.11314],[23,-0.0083,11.9514,0.11369],
+    [24,-0.0137,12.1515,0.11426]
+  ],
+  girl:[
+    [0,0.3809,3.2322,0.14171],[1,0.1714,4.1873,0.13724],[2,0.0962,5.1282,0.13000],
+    [3,0.0402,5.8458,0.12619],[4,-0.0050,6.4237,0.12402],[5,-0.0430,6.8985,0.12274],
+    [6,-0.0756,7.2970,0.12204],[7,-0.1039,7.6422,0.12178],[8,-0.1288,7.9487,0.12181],
+    [9,-0.1507,8.2254,0.12199],[10,-0.1700,8.4800,0.12223],[11,-0.1872,8.7192,0.12247],
+    [12,-0.2024,8.9481,0.12268],[13,-0.2158,9.1699,0.12283],[14,-0.2278,9.3870,0.12294],
+    [15,-0.2384,9.6008,0.12299],[16,-0.2478,9.8124,0.12303],[17,-0.2562,10.0226,0.12306],
+    [18,-0.2637,10.2315,0.12309],[19,-0.2703,10.4393,0.12315],[20,-0.2762,10.6464,0.12323],
+    [21,-0.2815,10.8534,0.12335],[22,-0.2862,11.0608,0.12350],[23,-0.2903,11.2688,0.12369],
+    [24,-0.2941,11.4775,0.12390]
+  ]
+};
+function lmsForAgeMonths(sex, months){
+  const tbl = WHO_WFA[sex==="girl"?"girl":"boy"];
+  if(months<=0) return tbl[0].slice(1);
+  if(months>=24) return tbl[24].slice(1);
+  const lo=Math.floor(months), hi=Math.ceil(months), frac=months-lo;
+  if(lo===hi) return tbl[lo].slice(1);
+  const a=tbl[lo], b=tbl[hi];
+  return [a[1]+(b[1]-a[1])*frac, a[2]+(b[2]-a[2])*frac, a[3]+(b[3]-a[3])*frac];
+}
+/* standard normal CDF */
+function normCdf(z){ const t=1/(1+0.2316419*Math.abs(z)); const d=0.3989423*Math.exp(-z*z/2);
+  let p=d*t*(0.3193815+t*(-0.3565638+t*(1.781478+t*(-1.821256+t*1.330274))));
+  return z>0?1-p:p; }
+function weightPercentile(sex, ageMonths, kg){
+  const [L,M,S]=lmsForAgeMonths(sex, ageMonths);
+  const z = L===0 ? Math.log(kg/M)/S : (Math.pow(kg/M,L)-1)/(L*S);
+  return { z, pct: Math.round(normCdf(z)*100) };
+}
+function medianWeight(sex, ageMonths){ return lmsForAgeMonths(sex, ageMonths)[1]; }
+
+const SLOTS={ A:{hex:"#5B8C7B",soft:"#E4EFE9",ink:"#2C4A40"}, B:{hex:"#C6803E",soft:"#F6E9DC",ink:"#6B4622"}, C:{hex:"#6E7BA6",soft:"#E6E9F2",ink:"#33406B"}, D:{hex:"#A65B7B",soft:"#F3E4EC",ink:"#6B2C48"} };
+const slotOf=b=>SLOTS[(b&&b.color)]||SLOTS.A;
+
+/* ---------- Utilities ---------- */
+const pad=n=>String(n).padStart(2,"0");
+const fmtClock=ms=>{const t=Math.max(0,Math.floor(ms/1000));const h=Math.floor(t/3600),m=Math.floor((t%3600)/60),s=t%60;return h>0?h+":"+pad(m)+":"+pad(s):pad(m)+":"+pad(s);};
+const fmtClockShort=ms=>{const t=Math.max(0,Math.floor(ms/60000));const h=Math.floor(t/60),m=t%60;return h>0?h+"h "+m+"m":m+"m";};
+const fmtTime=iso=>new Date(iso).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"});
+const fmtDate=iso=>new Date(iso).toLocaleDateString([],{month:"short",day:"numeric"});
+const fmtDur=m=>{if(m==null)return "-";if(m<60)return Math.round(m)+"m";const h=Math.floor(m/60),mm=Math.round(m%60);return mm?h+"h "+mm+"m":h+"h";};
+const fmtHrs=m=>(m/60).toFixed(1)+"h";
+const dayKey=iso=>new Date(iso).toLocaleDateString("en-CA");
+const ageDays=dob=>!dob?null:Math.max(0,Math.floor((Date.now()-new Date(dob))/86400000));
+const ageMonths=dob=>!dob?null:(Date.now()-new Date(dob))/(86400000*30.4375);
+const el=id=>document.getElementById(id);
+const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const isNight=iso=>{const h=new Date(iso).getHours();return h>=19||h<7;};
+const FEED_LABEL={breast:"Breastfed",expressed:"Expressed",formula:"Formula"};
+
+/* ---------- State ---------- */
+let sb=null, session=null;
+let households=[], currentHid=null;
+let babies=[], feeds=[], sleeps=[], diapers=[], weights=[], scripts=[];
+let tab="home";
+let feedTimers={};      /* baby_id -> {startISO, feed_type, side} active breastfeed timer */
+let pendingFeed=null;   /* for ml entry: {babyId, feed_type, startISO, endISO, durationMin} */
+let mlDraft="";
+let modal=null;
+let notifiedMarker={};
+let charts={};
+let summaryBabyId=null, growthBabyId=null;
+
+function autoRemindOn(){ try{return localStorage.getItem("autoRemind")==="1";}catch(e){return false;} }
+function setAutoRemind(on){ try{localStorage.setItem("autoRemind",on?"1":"0");}catch(e){} }
+
+/* ================================================================ Boot */
+function boot(){
+  if(!window.SUPABASE_URL||window.SUPABASE_URL.includes("YOUR-PROJECT-ID")){ renderConfigError(); return; }
+  sb=window.supabase.createClient(window.SUPABASE_URL, window.SUPABASE_PUBLISHABLE_KEY);
+  sb.auth.getSession().then(({data})=>{
+    session=data.session;
+    if(session) startApp(); else renderAuth();
+    sb.auth.onAuthStateChange((_e,s)=>{ const was=!!session; session=s; if(session&&!was) startApp(); if(!session&&was){households=[];currentHid=null;renderAuth();} });
+  });
+}
+function renderConfigError(){
+  el("app").innerHTML='<div class="wrap"><div class="card" style="text-align:center; padding:40px"><div class="fr" style="font-size:22px; margin-bottom:8px">Almost there</div><p class="sub" style="max-width:420px; margin:0 auto">Open <b>index.html</b> and paste your Supabase Project URL and Publishable key into the CONFIG block near the top, then reload.</p></div></div>';
+}
+
+/* ================================================================ Auth */
+function renderAuth(){
+  el("app").innerHTML=`<div style="min-height:100vh; display:flex; align-items:center; justify-content:center; padding:20px">
+    <div class="card" style="max-width:380px; width:100%; text-align:center; padding:32px">
+      <div style="font-size:34px; margin-bottom:4px">&#128118;</div>
+      <h1 class="fr" style="font-weight:600; font-size:26px; margin:0 0 4px">Baby Care Monitor</h1>
+      <p class="sub" style="margin:0 0 20px">Sign in with your email. One account holds all your baby profiles, on every device.</p>
+      <div id="authForm">
+        <input id="email" class="inp" type="email" inputmode="email" placeholder="you@example.com" style="margin-bottom:12px" />
+        <button id="sendLink" class="btn-primary tap" style="width:100%; background:var(--green)">Send me a sign-in link</button>
+        <p id="authMsg" style="font-size:13px; margin-top:12px; color:var(--mute)"></p>
+      </div>
+    </div></div>`;
+  el("email").addEventListener("keydown",e=>{if(e.key==="Enter")sendLink();});
+  el("sendLink").addEventListener("click",sendLink);
+}
+async function sendLink(){
+  const email=el("email").value.trim(), msg=el("authMsg");
+  if(!email.includes("@")){msg.style.color="#8A2B22";msg.textContent="Please enter a valid email.";return;}
+  el("sendLink").disabled=true; el("sendLink").textContent="Sending...";
+  const {error}=await sb.auth.signInWithOtp({email,options:{emailRedirectTo:window.location.href.split("#")[0]}});
+  el("sendLink").disabled=false; el("sendLink").textContent="Send me a sign-in link";
+  if(error){msg.style.color="#8A2B22";msg.textContent=error.message;}
+  else el("authForm").innerHTML='<p style="color:var(--green); font-weight:700; line-height:1.5">Check your email - link sent to<br><span style="color:var(--ink)">'+esc(email)+'</span></p>';
+}
+
+/* ================================================================ Load */
+async function startApp(){
+  el("app").innerHTML='<div class="wrap" style="color:var(--mute)">Loading...</div>';
+  await loadHouseholds();
+  if(households.length===0){ renderPicker(); return; }
+  currentHid=currentHid||households[0].id;
+  await loadHousehold(currentHid);
+  subscribeRealtime();
+  render();
+  if(!window._tick) window._tick=setInterval(tick,1000);
+}
+async function loadHouseholds(){ const {data}=await sb.from("households").select("*").order("created_at",{ascending:true}); households=data||[]; }
+async function loadHousehold(hid){
+  currentHid=hid;
+  const [{data:bs},{data:fs},{data:sl},{data:dp},{data:wt},{data:pr}]=await Promise.all([
+    sb.from("babies").select("*").eq("household_id",hid).order("sort_order",{ascending:true}),
+    sb.from("sessions").select("*").eq("household_id",hid).order("end_at",{ascending:true}),
+    sb.from("sleeps").select("*").eq("household_id",hid).order("end_at",{ascending:true}),
+    sb.from("diapers").select("*").eq("household_id",hid).order("at",{ascending:true}),
+    sb.from("weights").select("*").eq("household_id",hid).order("at",{ascending:true}),
+    sb.from("prescriptions").select("*").eq("household_id",hid).order("at",{ascending:false}),
+  ]);
+  babies=bs||[]; feeds=(fs||[]).map(mapFeed); sleeps=(sl||[]).map(mapSleep);
+  diapers=(dp||[]).map(mapDiaper); weights=(wt||[]).map(mapWeight); scripts=pr||[];
+  feedTimers={}; notifiedMarker={};
+}
+const mapFeed=r=>({id:r.id,baby_id:r.baby_id,feed_type:r.feed_type,side:r.side,startISO:r.start_at,endISO:r.end_at,durationMin:r.duration_min,ml:r.ml});
+const mapSleep=r=>({id:r.id,baby_id:r.baby_id,startISO:r.start_at,endISO:r.end_at,durationMin:r.duration_min});
+const mapDiaper=r=>({id:r.id,baby_id:r.baby_id,atISO:r.at,kind:r.kind});
+const mapWeight=r=>({id:r.id,baby_id:r.baby_id,at:r.at,weight_kg:r.weight_kg});
+const currentHousehold=()=>households.find(h=>h.id===currentHid)||{alert_gap_min:180,name:""};
+const byEnd=(a,b)=>new Date(a.endISO)-new Date(b.endISO);
+function refresh(){ if(!modal&&!pendingFeed) render(); }
+
+function subscribeRealtime(){
+  if(window._chan) sb.removeChannel(window._chan);
+  const f="household_id=eq."+currentHid;
+  window._chan=sb.channel("hh-"+currentHid)
+    .on("postgres_changes",{event:"*",schema:"public",table:"sessions",filter:f},p=>{ if(p.eventType==="DELETE")feeds=feeds.filter(x=>x.id!==p.old.id); else{const m=mapFeed(p.new);feeds=feeds.filter(x=>x.id!==m.id).concat(m).sort(byEnd);} refresh(); })
+    .on("postgres_changes",{event:"*",schema:"public",table:"sleeps",filter:f},p=>{ if(p.eventType==="DELETE")sleeps=sleeps.filter(x=>x.id!==p.old.id); else{const m=mapSleep(p.new);sleeps=sleeps.filter(x=>x.id!==m.id).concat(m).sort(byEnd);} refresh(); })
+    .on("postgres_changes",{event:"*",schema:"public",table:"diapers",filter:f},p=>{ if(p.eventType==="DELETE")diapers=diapers.filter(x=>x.id!==p.old.id); else{const m=mapDiaper(p.new);diapers=diapers.filter(x=>x.id!==m.id).concat(m).sort((a,b)=>new Date(a.atISO)-new Date(b.atISO));} refresh(); })
+    .on("postgres_changes",{event:"*",schema:"public",table:"weights",filter:f},p=>{ if(p.eventType==="DELETE")weights=weights.filter(x=>x.id!==p.old.id); else{const m=mapWeight(p.new);weights=weights.filter(x=>x.id!==m.id).concat(m).sort((a,b)=>new Date(a.at)-new Date(b.at));} refresh(); })
+    .on("postgres_changes",{event:"*",schema:"public",table:"babies",filter:f},async()=>{ const {data}=await sb.from("babies").select("*").eq("household_id",currentHid).order("sort_order",{ascending:true}); babies=data||[]; refresh(); })
+    .subscribe();
+}
+
+/* ================================================================ Household / baby actions */
+async function createHousehold(name){
+  const {data,error}=await sb.from("households").insert({owner_id:session.user.id,name:name||"New profile"}).select().single();
+  if(error){alert(error.message);return;}
+  households.push(data); currentHid=data.id; babies=[];feeds=[];sleeps=[];diapers=[];weights=[];scripts=[]; modal=null; await startApp();
+}
+async function switchHousehold(hid){ if(hid===currentHid)return; await loadHousehold(hid); subscribeRealtime(); tab="home"; render(); }
+async function updateGap(g){ const h=currentHousehold(); h.alert_gap_min=g; await sb.from("households").update({alert_gap_min:g}).eq("id",currentHid); render(); }
+async function addBaby(name,color,sex){
+  const order=babies.length;
+  const {data,error}=await sb.from("babies").insert({household_id:currentHid,owner_id:session.user.id,name:name||("Baby "+(order+1)),color:color||"A",sex:sex||"unknown",sort_order:order}).select().single();
+  if(error){alert(error.message);return;}
+  babies.push(data); modal=null; render();
+}
+async function saveBaby(id,patch){ const b=babies.find(x=>x.id===id); if(!b)return; Object.assign(b,patch); await sb.from("babies").update(patch).eq("id",id); }
+async function removeBaby(id){
+  babies=babies.filter(x=>x.id!==id);
+  feeds=feeds.filter(s=>s.baby_id!==id); sleeps=sleeps.filter(s=>s.baby_id!==id); diapers=diapers.filter(s=>s.baby_id!==id); weights=weights.filter(s=>s.baby_id!==id);
+  modal=null; render(); await sb.from("babies").delete().eq("id",id);
+}
+
+/* ================================================================ Sleep model (gap-based, always-on)
+   Sleep = time since the last feed ended. Starting a feed persists the
+   sleep that just ended (>=5 min) and shows the baby as Awake. Ending a
+   feed resumes sleep automatically. Diapers do not break sleep. */
+function lastFeedEnd(id){ const l=feeds.filter(f=>f.baby_id===id); return l.length?l.reduce((a,b)=>new Date(a.endISO)>new Date(b.endISO)?a:b).endISO:null; }
+function isFeeding(id){ return !!feedTimers[id]; }
+function sleepStartFor(id){ if(isFeeding(id))return null; return lastFeedEnd(id); }
+function isAwake(id){ return isFeeding(id); } /* awake only during an active feed; otherwise assumed asleep */
+
+/* ================================================================ Feeding */
+function startBreast(id, side){
+  /* persist the sleep that just ended */
+  const ss=sleepStartFor(id);
+  feedTimers[id]={startISO:new Date().toISOString(), feed_type:"breast", side:side||null};
+  if(ss){ const mins=(Date.now()-new Date(ss).getTime())/60000; if(mins>=5) persistSleep(id, ss, new Date().toISOString(), mins); }
+  render();
+}
+async function stopBreast(id){
+  const t=feedTimers[id]; if(!t)return;
+  const endISO=new Date().toISOString(); const durationMin=(Date.now()-new Date(t.startISO))/60000;
+  delete feedTimers[id];
+  const row={household_id:currentHid,baby_id:id,owner_id:session.user.id,feed_type:"breast",side:t.side,start_at:t.startISO,end_at:endISO,duration_min:durationMin,ml:null};
+  const {data}=await sb.from("sessions").insert(row).select().single();
+  if(data) feeds=feeds.filter(x=>x.id!==data.id).concat(mapFeed(data)).sort(byEnd);
+  render();
+  if(autoRemindOn()) remindNextFeed(id);
+}
+/* bottle feeds (expressed/formula): open ml sheet */
+function startBottle(id, feed_type){
+  /* a bottle feed also interrupts sleep at this instant */
+  const ss=sleepStartFor(id);
+  if(ss){ const mins=(Date.now()-new Date(ss).getTime())/60000; if(mins>=5) persistSleep(id, ss, new Date().toISOString(), mins); }
+  const now=new Date().toISOString();
+  pendingFeed={babyId:id, feed_type, startISO:now, endISO:now, durationMin:0}; mlDraft=""; render();
+}
+async function commitBottle(remind){
+  if(!pendingFeed)return;
+  const id=pendingFeed.babyId; const ml=parseFloat(mlDraft);
+  const row={household_id:currentHid,baby_id:id,owner_id:session.user.id,feed_type:pendingFeed.feed_type,side:null,start_at:pendingFeed.startISO,end_at:pendingFeed.endISO,duration_min:0,ml:isNaN(ml)?null:ml};
+  const {data,error}=await sb.from("sessions").insert(row).select().single();
+  if(!error&&data) feeds=feeds.filter(x=>x.id!==data.id).concat(mapFeed(data)).sort(byEnd);
+  pendingFeed=null; mlDraft=""; render();
+  if(remind) remindNextFeed(id);
+}
+async function persistSleep(id,startISO,endISO,mins){
+  const {data}=await sb.from("sleeps").insert({household_id:currentHid,baby_id:id,owner_id:session.user.id,start_at:startISO,end_at:endISO,duration_min:mins}).select().single();
+  if(data) sleeps=sleeps.filter(x=>x.id!==data.id).concat(mapSleep(data)).sort(byEnd);
+}
+async function deleteFeed(id){ feeds=feeds.filter(x=>x.id!==id); render(); await sb.from("sessions").delete().eq("id",id); }
+async function deleteSleep(id){ sleeps=sleeps.filter(x=>x.id!==id); render(); await sb.from("sleeps").delete().eq("id",id); }
+async function deleteDiaper(id){ diapers=diapers.filter(x=>x.id!==id); render(); await sb.from("diapers").delete().eq("id",id); }
+
+/* ================================================================ Diaper */
+async function logDiaper(id,kind){
+  const {data}=await sb.from("diapers").insert({household_id:currentHid,baby_id:id,owner_id:session.user.id,at:new Date().toISOString(),kind}).select().single();
+  if(data) diapers=diapers.filter(x=>x.id!==data.id).concat(mapDiaper(data)).sort((a,b)=>new Date(a.atISO)-new Date(b.atISO));
+  render();
+}
+
+/* ================================================================ Weight */
+async function addWeight(id, dateStr, kg){
+  const {data}=await sb.from("weights").insert({household_id:currentHid,baby_id:id,owner_id:session.user.id,at:dateStr,weight_kg:kg}).select().single();
+  if(data){ weights=weights.filter(x=>x.id!==data.id).concat(mapWeight(data)).sort((a,b)=>new Date(a.at)-new Date(b.at)); await saveBaby(id,{weight_kg:kg}); }
+  modal=null; render();
+}
+async function deleteWeight(wid){ weights=weights.filter(w=>w.id!==wid); render(); await sb.from("weights").delete().eq("id",wid); }
+
+/* ================================================================ Prescriptions (image storage) */
+async function uploadPrescription(babyId, file, title, note){
+  const ext=(file.name.split(".").pop()||"jpg").toLowerCase();
+  const path=session.user.id+"/"+currentHid+"/"+Date.now()+"."+ext;
+  const {error:upErr}=await sb.storage.from("prescriptions").upload(path, file, {upsert:false});
+  if(upErr){ alert("Upload failed: "+upErr.message); return; }
+  const {data,error}=await sb.from("prescriptions").insert({household_id:currentHid,baby_id:babyId||null,owner_id:session.user.id,at:new Date().toISOString().slice(0,10),title:title||"Prescription",note:note||null,storage_path:path}).select().single();
+  if(error){ alert(error.message); return; }
+  scripts=[data].concat(scripts);
+  modal=null; render();
+}
+async function viewPrescription(path){
+  const {data,error}=await sb.storage.from("prescriptions").createSignedUrl(path,3600);
+  if(error){ alert("Could not open: "+error.message); return; }
+  window.open(data.signedUrl,"_blank");
+}
+async function deletePrescription(row){
+  scripts=scripts.filter(s=>s.id!==row.id); render();
+  await sb.storage.from("prescriptions").remove([row.storage_path]);
+  await sb.from("prescriptions").delete().eq("id",row.id);
+}
+
+/* ================================================================ iPhone reminder (.ics) */
+function icsDownload(babyName, whenDate, gapMin){
+  const dt=d=>d.getUTCFullYear()+pad(d.getUTCMonth()+1)+pad(d.getUTCDate())+"T"+pad(d.getUTCHours())+pad(d.getUTCMinutes())+pad(d.getUTCSeconds())+"Z";
+  const start=whenDate,end=new Date(whenDate.getTime()+15*60000),uid="feed-"+Date.now()+"@bcm",title="Feed "+babyName;
+  const body=["BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//BCM//EN","CALSCALE:GREGORIAN","BEGIN:VEVENT","UID:"+uid,"DTSTAMP:"+dt(new Date()),"DTSTART:"+dt(start),"DTEND:"+dt(end),"SUMMARY:"+title,"DESCRIPTION:Next feed reminder ("+fmtDur(gapMin)+" after last feed).","BEGIN:VALARM","ACTION:DISPLAY","DESCRIPTION:"+title,"TRIGGER:PT0M","END:VALARM","END:VEVENT","END:VCALENDAR"].join("\r\n");
+  const blob=new Blob([body],{type:"text/calendar;charset=utf-8"}), url=URL.createObjectURL(blob), a=document.createElement("a");
+  a.href=url; a.download=title.replace(/\s+/g,"-")+".ics"; document.body.appendChild(a); a.click();
+  setTimeout(()=>{document.body.removeChild(a);URL.revokeObjectURL(url);},500);
+}
+function remindNextFeed(babyId){ const b=babies.find(x=>x.id===babyId)||{name:"Baby"}; const gap=currentHousehold().alert_gap_min||180; icsDownload(b.name,new Date(Date.now()+gap*60000),gap); }
+
+/* ================================================================ Alerts */
+function feedAlert(id){ const last=lastFeedEnd(id); if(!last)return{minsSince:null,minsLeft:null,due:false,overdue:false}; const minsSince=(Date.now()-new Date(last))/60000,gap=currentHousehold().alert_gap_min||180,minsLeft=gap-minsSince; return{minsSince,minsLeft,due:minsLeft<=0,overdue:minsLeft<=-30}; }
+function askNotify(){ if("Notification" in window && Notification.permission!=="granted") Notification.requestPermission(); }
+function tick(){
+  babies.forEach(b=>{
+    const t=feedTimers[b.id];
+    if(t){ const n=el("feedclock-"+b.id); if(n) n.textContent=fmtClock(Date.now()-new Date(t.startISO).getTime()); }
+    const ss=sleepStartFor(b.id); const sc=el("sleepclock-"+b.id);
+    if(sc) sc.textContent = isFeeding(b.id)?"awake":(ss?fmtClockShort(Date.now()-new Date(ss).getTime()):"--");
+    const st=feedAlert(b.id); const last=lastFeedEnd(b.id);
+    if(last){ const marker=last+":"+(currentHousehold().alert_gap_min||180);
+      if(st.due&&notifiedMarker[b.id]!==marker){ notifiedMarker[b.id]=marker; if("Notification" in window && Notification.permission==="granted") new Notification(b.name+" is due for a feed",{body:"Last fed "+fmtDur(st.minsSince)+" ago."}); } }
+  });
+}
+
+/* ================================================================ Analytics */
+function analyticsFor(){
+  const dayset=new Set();
+  feeds.forEach(f=>dayset.add(dayKey(f.endISO))); sleeps.forEach(s=>dayset.add(dayKey(s.endISO))); diapers.forEach(d=>dayset.add(dayKey(d.atISO)));
+  const days=[...dayset].sort(); const per={};
+  babies.forEach(b=>{
+    const bf=feeds.filter(f=>f.baby_id===b.id), bs=sleeps.filter(s=>s.baby_id===b.id), bd=diapers.filter(d=>d.baby_id===b.id);
+    const byDay={}; days.forEach(dk=>byDay[dk]={ml:0,feeds:0,breast:0,bottle:0,sleepMin:0,sleepDayMin:0,sleepNightMin:0,wet:0,dirty:0});
+    bf.forEach(f=>{const k=dayKey(f.endISO); if(byDay[k]){byDay[k].ml+=f.ml||0; byDay[k].feeds+=1; if(f.feed_type==="breast")byDay[k].breast+=1; else byDay[k].bottle+=1;}});
+    bs.forEach(s=>{const k=dayKey(s.endISO); if(byDay[k]){byDay[k].sleepMin+=s.durationMin||0; if(isNight(s.endISO))byDay[k].sleepNightMin+=s.durationMin||0; else byDay[k].sleepDayMin+=s.durationMin||0;}});
+    bd.forEach(d=>{const k=dayKey(d.atISO); if(byDay[k]){ if(d.kind==="wet"||d.kind==="both")byDay[k].wet+=1; if(d.kind==="dirty"||d.kind==="both")byDay[k].dirty+=1; }});
+    const dwF=days.filter(dk=>byDay[dk].feeds>0), dwS=days.filter(dk=>byDay[dk].sleepMin>0), dwD=days.filter(dk=>byDay[dk].wet+byDay[dk].dirty>0);
+    const mlS=bf.filter(f=>f.ml!=null);
+    per[b.id]={ byDay,days,
+      avgDailyMl:dwF.length?Math.round(bf.reduce((a,f)=>a+(f.ml||0),0)/dwF.length):null,
+      avgFeeds:dwF.length?bf.length/dwF.length:null,
+      breastPct:bf.length?Math.round(bf.filter(f=>f.feed_type==="breast").length/bf.length*100):null,
+      avgPerFeed:mlS.length?Math.round(mlS.reduce((a,f)=>a+f.ml,0)/mlS.length):null,
+      avgSleepMin:dwS.length?Math.round(bs.reduce((a,s)=>a+(s.durationMin||0),0)/dwS.length):null,
+      avgNightMin:dwS.length?Math.round(bs.filter(s=>isNight(s.endISO)).reduce((a,s)=>a+(s.durationMin||0),0)/dwS.length):null,
+      avgDiapers:dwD.length?bd.length/dwD.length:null,
+      avgWet:dwD.length?bd.filter(d=>d.kind==="wet"||d.kind==="both").length/dwD.length:null,
+    };
+  });
+  return {days,per};
+}
+function nextVisit(dob){ if(!dob)return null; const am=ageMonths(dob); const next=VISIT_MONTHS.find(m=>m>am); if(next==null)return null;
+  const due=new Date(new Date(dob).getTime()+next*30.4375*86400000);
+  return {months:next, dueDate:due, label: next<2?"6-week":next+"-month"}; }
+
+/* ================================================================ Picker */
+function renderPicker(){
+  el("app").innerHTML=`<div class="wrap" style="max-width:460px">
+    <header style="text-align:center; margin:20px 0 24px">
+      <h1 class="title fr">Welcome</h1>
+      <p class="sub">Create your first profile - one set of babies and their history. Make one per family or setup.</p>
+      <p class="sub" style="margin-top:8px">Signed in as ${esc(session.user.email)} - <a href="#" id="signout" style="color:var(--green); font-weight:700">Sign out</a></p>
+    </header>
+    <div class="card"><label class="lbl">Profile name</label>
+      <input id="hhName" class="inp" placeholder="e.g. The Twins" />
+      <button id="hhCreate" class="btn-primary tap" style="width:100%; background:var(--green); margin-top:12px">Create profile</button></div>
+  </div>`;
+  el("signout").addEventListener("click",e=>{e.preventDefault();sb.auth.signOut();});
+  const go=()=>createHousehold(el("hhName").value.trim());
+  el("hhCreate").addEventListener("click",go); el("hhName").addEventListener("keydown",e=>{if(e.key==="Enter")go();});
+}
+
+/* ================================================================ Main render */
+function render(){
+  const hhOptions=households.map(x=>`<option value="${x.id}" ${x.id===currentHid?"selected":""}>${esc(x.name)}</option>`).join("");
+  const header=`
+    <header class="noprint" style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; margin-bottom:12px">
+      <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap">
+        <select id="hhSelect" class="hsel">${hhOptions}</select>
+        <button id="hhNew" class="chip tap">+ New</button>
+        <button id="hhManage" class="chip tap">Manage</button>
+      </div>
+      <a href="#" id="signout" class="sub" style="color:var(--green); font-weight:700">Sign out</a>
+    </header>`;
+  let body="";
+  if(tab==="home") body=viewHome();
+  else if(tab==="insights") body=viewInsights();
+  else if(tab==="growth") body=viewGrowth();
+  else if(tab==="summary") body=viewSummary();
+  else if(tab==="more") body=viewMore();
+
+  el("app").innerHTML=`<div class="wrap">${header}${body}</div>${tabBar()}` + (pendingFeed?sheetBottleHTML():"") + (modal?modalHTML():"");
+
+  el("signout").addEventListener("click",e=>{e.preventDefault();sb.auth.signOut();});
+  el("hhSelect").addEventListener("change",e=>switchHousehold(e.target.value));
+  el("hhNew").addEventListener("click",()=>{modal={type:"newHousehold"};render();});
+  el("hhManage").addEventListener("click",()=>{modal={type:"manageHousehold"};render();});
+  document.querySelectorAll("[data-tab]").forEach(b=>b.addEventListener("click",()=>{tab=b.dataset.tab;render();}));
+
+  if(tab==="home") wireHome();
+  else if(tab==="insights") drawInsightCharts();
+  else if(tab==="growth") wireGrowth();
+  else if(tab==="summary") wireSummary();
+  else if(tab==="more") wireMore();
+  if(pendingFeed) wireSheetBottle();
+  if(modal) wireModal();
+}
+function tabBar(){
+  const items=[["home","&#127968;","Home"],["insights","&#128202;","Insights"],["growth","&#128207;","Growth"],["summary","&#129658;","Doctor"],["more","&#9881;","More"]];
+  return `<nav class="tabbar noprint">${items.map(([k,ic,l])=>`<button class="tabbtn tap ${tab===k?"on":""}" data-tab="${k}"><span class="ic">${ic}</span>${l}</button>`).join("")}</nav>`;
+}
+
+/* ================================================================ HOME - mother-first */
+function viewHome(){
+  const gap=currentHousehold().alert_gap_min||180;
+  if(babies.length===0) return `<div class="card" style="text-align:center; padding:40px; color:var(--mute)">No babies yet. Tap <b>More</b> to add your first baby.</div>`;
+  const cards=babies.map(homeCard).join("");
+  return `<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(320px,1fr))">${cards}</div>
+    <p class="disc" style="margin:14px 4px 0">Sleep is tracked automatically between feeds. Starting a feed marks baby awake; finishing resumes sleep. Reminder gap: ${fmtDur(gap)} (change in More).</p>`;
+}
+function homeCard(b){
+  const sl=slotOf(b); const feeding=isFeeding(b.id); const st=feedAlert(b.id);
+  const ss=sleepStartFor(b.id);
+  const sleepStr = feeding?"awake":(ss?fmtClockShort(Date.now()-new Date(ss).getTime()):"--");
+  const statusPill = feeding
+    ? `<span class="statuspill" style="background:#F7ECC9; color:#7A5A16">&#127868; Feeding now</span>`
+    : `<span class="statuspill" style="background:${sl.soft}; color:${sl.ink}">&#128564; Asleep <span id="sleepclock-${b.id}">${sleepStr}</span></span>`;
+  let feedInfo="";
+  if(st.minsSince!=null){
+    const col = st.overdue?"#8A2B22":(st.due?"#7A5A16":"var(--mute)");
+    feedInfo=`<span style="color:${col}; font-weight:700; font-size:13px">${st.due?(st.overdue?"Feed overdue":"Feed due"):"Next feed ~"+fmtDur(st.minsLeft)} &middot; last ${fmtDur(st.minsSince)} ago</span>`;
+  } else feedInfo=`<span class="statusline">No feeds logged yet</span>`;
+
+  const feedControls = feeding
+    ? `<button data-stopbreast="${b.id}" class="btn-primary tap" style="grid-column:1/-1; background:${sl.ink}"><span id="feedclock-${b.id}">00:00</span> &middot; Stop breastfeed &amp; save</button>`
+    : `<button data-breast="${b.id}" class="bigbtn tap" style="background:${sl.hex}"><span class="ic">&#129331;</span>Breast</button>
+       <button data-bottle="${b.id}|expressed" class="bigbtn tap" style="background:#7B9BA6"><span class="ic">&#127854;</span>Expressed</button>
+       <button data-bottle="${b.id}|formula" class="bigbtn tap" style="background:#B08968"><span class="ic">&#127868;</span>Formula</button>`;
+
+  return `
+    <div class="card" style="border-top:4px solid ${sl.hex}">
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:10px">
+        <div style="display:flex; align-items:center; gap:8px">
+          <span class="dot" style="background:${sl.hex}"></span>
+          <div class="fr" style="font-size:20px; font-weight:600; color:${sl.ink}">${esc(b.name)}</div>
+        </div>
+        ${statusPill}
+      </div>
+      <div style="margin-bottom:12px">${feedInfo}</div>
+
+      <div style="font-size:11px; font-weight:800; color:var(--mute); text-transform:uppercase; letter-spacing:.04em; margin-bottom:6px">Feed</div>
+      <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; margin-bottom:14px">${feedControls}</div>
+
+      <div style="font-size:11px; font-weight:800; color:var(--mute); text-transform:uppercase; letter-spacing:.04em; margin-bottom:6px">Diaper</div>
+      <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; margin-bottom:12px">
+        <button data-diaper="${b.id}|wet" class="btn-ghost tap">&#128166; Wet</button>
+        <button data-diaper="${b.id}|dirty" class="btn-ghost tap">&#128169; Dirty</button>
+        <button data-diaper="${b.id}|both" class="btn-ghost tap">Both</button>
+      </div>
+
+      <div style="display:flex; gap:8px">
+        <button data-toggle="${b.id}" class="btn-ghost tap" style="flex:1">${feeding?"":"&#9654; "}${feeding?"(feeding)":"Log woke / slept"}</button>
+        <button data-remind="${b.id}" class="btn-ghost tap" style="flex:1">&#128276; Remind</button>
+      </div>
+
+      <details style="margin-top:12px">
+        <summary style="cursor:pointer; font-size:13px; font-weight:700; color:var(--mute)">Recent activity</summary>
+        ${recentFor(b.id)}
+      </details>
+    </div>`;
+}
+function recentFor(id){
+  const items=[];
+  feeds.filter(f=>f.baby_id===id).forEach(f=>items.push({t:f.endISO,kind:"feed",txt:FEED_LABEL[f.feed_type]+(f.side?" ("+f.side+")":"")+(f.ml!=null?" "+f.ml+"ml":"")+(f.durationMin>=1?" "+fmtDur(f.durationMin):""),del:"feed",id:f.id}));
+  sleeps.filter(s=>s.baby_id===id).forEach(s=>items.push({t:s.endISO,kind:"sleep",txt:"slept "+fmtDur(s.durationMin),del:"sleep",id:s.id}));
+  diapers.filter(d=>d.baby_id===id).forEach(d=>items.push({t:d.atISO,kind:"diaper",txt:d.kind+" diaper",del:"diaper",id:d.id}));
+  if(!items.length) return '<div style="color:var(--mute); font-size:13px; padding:8px 0">Nothing yet.</div>';
+  items.sort((a,b)=>new Date(b.t)-new Date(a.t));
+  const icon={feed:"&#127868;",sleep:"&#128564;",diaper:"&#129530;"};
+  return '<div style="display:flex; flex-direction:column; gap:5px; margin-top:8px">'+items.slice(0,10).map(it=>`
+    <div class="row" style="background:var(--cream); padding:6px 8px">
+      <span style="font-size:13px">${icon[it.kind]}</span>
+      <span style="font-size:12px">${fmtTime(it.t)}</span>
+      <span style="font-size:12px; color:var(--mute)">${fmtDate(it.t)}</span>
+      <span style="margin-left:auto; font-size:12px; color:var(--mute)">${it.txt}</span>
+      <button data-delitem="${it.del}|${it.id}" style="border:none; background:transparent; color:var(--mute); font-size:15px; padding:0 2px">&times;</button>
+    </div>`).join("")+'</div>';
+}
+function wireHome(){
+  document.querySelectorAll("[data-breast]").forEach(b=>b.addEventListener("click",()=>{
+    const id=b.dataset.breast; const hasSides=true;
+    /* optional side: quick prompt via modal-lite */
+    modal={type:"breastSide", id}; render();
+  }));
+  document.querySelectorAll("[data-stopbreast]").forEach(b=>b.addEventListener("click",()=>stopBreast(b.dataset.stopbreast)));
+  document.querySelectorAll("[data-bottle]").forEach(b=>b.addEventListener("click",()=>{const[id,ft]=b.dataset.bottle.split("|");startBottle(id,ft);}));
+  document.querySelectorAll("[data-diaper]").forEach(b=>b.addEventListener("click",()=>{const[id,k]=b.dataset.diaper.split("|");logDiaper(id,k);}));
+  document.querySelectorAll("[data-remind]").forEach(b=>b.addEventListener("click",()=>remindNextFeed(b.dataset.remind)));
+  document.querySelectorAll("[data-toggle]").forEach(b=>b.addEventListener("click",()=>{ const id=b.dataset.toggle; if(isFeeding(id)) return; /* manual sleep reset: log a marker feed-end now by inserting nothing; instead just inform */ alert("Sleep is automatic - it counts from the last feed. To split a nap, log the feed that woke the baby."); }));
+  document.querySelectorAll("[data-delitem]").forEach(b=>b.addEventListener("click",()=>{const[t,id]=b.dataset.delitem.split("|");const n=isNaN(+id)?id:+id;if(t==="feed")deleteFeed(n);else if(t==="sleep")deleteSleep(n);else deleteDiaper(n);}));
+}
+
+/* ml sheet for bottle feeds */
+function sheetBottleHTML(){
+  const b=babies.find(x=>x.id===pendingFeed.babyId)||{name:"Baby",color:"A"}; const sl=slotOf(b); const quick=[30,60,90,120,150];
+  return `<div class="sheet-bg" id="sheetBg"><div class="sheet">
+    <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px"><span class="dot" style="background:${sl.hex}"></span>
+      <div class="fr" style="font-size:20px; font-weight:600; color:${sl.ink}">${esc(b.name)} &middot; ${FEED_LABEL[pendingFeed.feed_type]}</div></div>
+    <p style="color:var(--mute); font-size:13px; margin:0 0 14px">How much did they take? (ml)</p>
+    <input id="mlInput" class="inp" type="number" inputmode="decimal" placeholder="e.g. 90" style="font-size:22px; font-weight:700" />
+    <div style="display:flex; gap:6px; flex-wrap:wrap; margin:12px 0 14px">${quick.map(q=>`<button class="tap" data-ml="${q}" style="flex:1; border:1px solid var(--line); background:var(--paper); border-radius:10px; padding:8px; font-weight:700; font-size:14px">${q}</button>`).join("")}</div>
+    <label style="display:flex; align-items:center; gap:10px; background:${sl.soft}; border-radius:12px; padding:12px; margin-bottom:14px; cursor:pointer">
+      <input id="remindChk" type="checkbox" ${autoRemindOn()?"checked":""} style="width:20px; height:20px; accent-color:${sl.hex}" />
+      <span style="font-size:13px; font-weight:700; color:${sl.ink}">Add next-feed reminder to my phone <span style="color:var(--mute); font-weight:600">(in ${fmtDur(currentHousehold().alert_gap_min||180)})</span></span></label>
+    <div style="display:flex; gap:10px">
+      <button id="mlCancel" class="tap" style="flex:1; border:1px solid var(--line); background:var(--paper); border-radius:12px; padding:12px; font-weight:700; color:var(--mute)">Cancel</button>
+      <button id="mlSave" class="btn-primary tap" style="flex:2; background:${sl.hex}">Save feed</button>
+    </div>
+    <p class="disc" style="margin:10px 0 0">The reminder opens in your phone's Calendar - its alert can notify you even when locked.</p>
+  </div></div>`;
+}
+function wireSheetBottle(){
+  const inp=el("mlInput"); inp.focus();
+  const wantsRemind=()=>{const c=el("remindChk");return !!(c&&c.checked);};
+  inp.addEventListener("input",()=>mlDraft=inp.value);
+  inp.addEventListener("keydown",e=>{if(e.key==="Enter")commitBottle(wantsRemind());});
+  document.querySelectorAll("[data-ml]").forEach(b=>b.addEventListener("click",()=>{mlDraft=b.dataset.ml;inp.value=mlDraft;}));
+  el("mlCancel").addEventListener("click",()=>{pendingFeed=null;mlDraft="";render();});
+  el("mlSave").addEventListener("click",()=>commitBottle(wantsRemind()));
+  el("sheetBg").addEventListener("click",e=>{if(e.target.id==="sheetBg"){pendingFeed=null;mlDraft="";render();}});
+}
+
+/* ================================================================ INSIGHTS */
+function viewInsights(){
+  if(babies.length===0) return `<div class="card" style="text-align:center; padding:40px; color:var(--mute)">Add a baby first (More tab).</div>`;
+  const a=analyticsFor(); window._a=a;
+  /* plain-language summary first */
+  const today=dayKey(new Date().toISOString());
+  const lines=babies.map(b=>{
+    const d=a.per[b.id]; const t=d.byDay[today]; const ad=ageDays(b.dob);
+    const bits=[];
+    if(t){ bits.push(t.feeds+" feeds"); if(t.ml)bits.push(t.ml+" ml"); if(t.sleepMin)bits.push(fmtHrs(t.sleepMin)+" sleep"); bits.push((t.wet+t.dirty)+" diapers"); }
+    const sl=slotOf(b);
+    return `<div style="padding:10px 0; border-bottom:1px solid var(--line)"><b style="color:${sl.ink}">${esc(b.name)} today:</b> <span style="color:var(--mute)">${bits.length?bits.join(" &middot; "):"nothing logged yet"}</span></div>`;
+  }).join("");
+  if(a.days.length===0) return `<div class="card">${lines}<p class="disc" style="margin-top:10px">Log activity to see charts.</p></div>`;
+  const stat=babies.map(b=>{ const sl=slotOf(b),d=a.per[b.id],w=parseFloat(b.weight_kg); const nTyp=!isNaN(w)?Math.round(w*ML_PER_KG.typical):null; const pct=(nTyp&&d.avgDailyMl)?Math.round(d.avgDailyMl/nTyp*100):null;
+    const m=(l,v)=>`<div><div class="metricv fr" style="color:${sl.hex}">${v}</div><div class="metricl">${l}</div></div>`;
+    return `<div class="card" style="border-top:4px solid ${sl.hex}"><div style="display:flex; align-items:center; gap:8px; margin-bottom:10px"><span class="dot" style="background:${sl.hex}"></span><div class="fr" style="font-size:18px; font-weight:600; color:${sl.ink}">${esc(b.name)}</div></div>
+      <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px">
+        ${m("Milk/day",d.avgDailyMl?d.avgDailyMl+"ml":"-")}${m("Feeds/day",d.avgFeeds?d.avgFeeds.toFixed(1):"-")}${m("Breast %",d.breastPct!=null?d.breastPct+"%":"-")}
+        ${m("Sleep/day",d.avgSleepMin?fmtHrs(d.avgSleepMin):"-")}${m("Night",d.avgNightMin?fmtHrs(d.avgNightMin):"-")}${m("Diapers/day",d.avgDiapers?d.avgDiapers.toFixed(1):"-")}
+      </div></div>`;
+  }).join("");
+  return `<div class="card" style="margin-bottom:14px">${lines}</div>
+    <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(260px,1fr))">${stat}</div>
+    <section class="card" style="margin-top:14px"><div style="font-weight:800; font-size:15px; margin-bottom:10px">Daily milk (ml)</div><div class="chart-box" style="height:220px"><canvas id="cMl"></canvas></div></section>
+    <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); margin-top:14px">
+      <section class="card"><div style="font-weight:800; font-size:15px; margin-bottom:10px">Daily sleep (h, day/night)</div><div class="chart-box" style="height:210px"><canvas id="cSleep"></canvas></div></section>
+      <section class="card"><div style="font-weight:800; font-size:15px; margin-bottom:10px">Daily diapers (wet/dirty)</div><div class="chart-box" style="height:210px"><canvas id="cDia"></canvas></div></section>
+    </div>
+    <p class="disc" style="margin:14px 4px 0">Population averages, not targets. Not medical advice.</p>`;
+}
+function drawInsightCharts(){
+  Object.values(charts).forEach(c=>{try{c.destroy();}catch(e){}}); charts={};
+  const a=window._a; if(!a||a.days.length===0) return;
+  const labels=a.days.map(d=>fmtDate(d)); const gridC="#E8E1D4",tickC="#8A8578";
+  const base={responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{font:{family:"Nunito",size:12},color:"#33302A"}}},scales:{x:{grid:{color:gridC},ticks:{color:tickC,font:{size:11}}},y:{grid:{color:gridC},ticks:{color:tickC,font:{size:11}},beginAtZero:true}}};
+  if(el("cMl")) charts.ml=new Chart(el("cMl"),{type:"bar",data:{labels,datasets:babies.map(b=>({label:b.name,data:a.days.map(dk=>a.per[b.id].byDay[dk].ml),backgroundColor:slotOf(b).hex,borderRadius:6}))},options:base});
+  const dsS=[]; babies.forEach(b=>{ dsS.push({label:b.name+" day",data:a.days.map(dk=>+(a.per[b.id].byDay[dk].sleepDayMin/60).toFixed(2)),backgroundColor:slotOf(b).hex,stack:b.id}); dsS.push({label:b.name+" night",data:a.days.map(dk=>+(a.per[b.id].byDay[dk].sleepNightMin/60).toFixed(2)),backgroundColor:slotOf(b).ink,stack:b.id}); });
+  if(el("cSleep")) charts.s=new Chart(el("cSleep"),{type:"bar",data:{labels,datasets:dsS},options:{...base,scales:{x:{...base.scales.x,stacked:true},y:{...base.scales.y,stacked:true}}}});
+  const dsD=[]; babies.forEach(b=>{ dsD.push({label:b.name+" wet",data:a.days.map(dk=>a.per[b.id].byDay[dk].wet),backgroundColor:slotOf(b).hex,stack:b.id}); dsD.push({label:b.name+" dirty",data:a.days.map(dk=>a.per[b.id].byDay[dk].dirty),backgroundColor:slotOf(b).ink,stack:b.id}); });
+  if(el("cDia")) charts.d=new Chart(el("cDia"),{type:"bar",data:{labels,datasets:dsD},options:{...base,scales:{x:{...base.scales.x,stacked:true},y:{...base.scales.y,stacked:true}}}});
+}
+
+/* ================================================================ GROWTH (WHO weight-for-age) */
+function viewGrowth(){
+  if(babies.length===0) return `<div class="card" style="text-align:center; padding:40px; color:var(--mute)">Add a baby first (More tab).</div>`;
+  growthBabyId=growthBabyId&&babies.find(b=>b.id===growthBabyId)?growthBabyId:babies[0].id;
+  const b=babies.find(x=>x.id===growthBabyId);
+  const picker=babies.length>1?`<div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:14px">${babies.map(x=>`<button class="chip tap ${x.id===growthBabyId?"on":""}" data-growthbaby="${x.id}">${esc(x.name)}</button>`).join("")}</div>`:"";
+  const bw=weights.filter(w=>w.baby_id===b.id).sort((x,y)=>new Date(x.at)-new Date(y.at));
+  const sexKnown=b.sex==="boy"||b.sex==="girl";
+  let latest="";
+  if(bw.length && sexKnown){
+    const last=bw[bw.length-1]; const am=(new Date(last.at)-new Date(b.dob))/(86400000*30.4375);
+    const {pct}=weightPercentile(b.sex, am, last.weight_kg); const med=medianWeight(b.sex, am);
+    latest=`<div style="background:${slotOf(b).soft}; border-radius:12px; padding:14px; margin-bottom:14px">
+      <div style="font-weight:800; color:${slotOf(b).ink}">Latest: ${last.weight_kg} kg on ${fmtDate(last.at)}</div>
+      <div style="font-size:14px; color:${slotOf(b).ink}; margin-top:4px">WHO weight-for-age: <b>${pct}th percentile</b> &middot; median for age ~${med.toFixed(1)} kg</div>
+      <div style="font-size:12px; color:var(--mute); margin-top:4px">${pctNote(pct)}</div></div>`;
+  } else if(!sexKnown){
+    latest=`<div style="background:#FBEEEC; border-radius:12px; padding:12px; margin-bottom:14px; font-size:13px; color:#8A2B22">Set this baby's sex (More &rarr; Edit baby) to compare against WHO percentiles - they differ for boys and girls.</div>`;
+  }
+  const list=bw.length?`<div style="margin-top:8px">${bw.slice().reverse().map(w=>{
+    const am=b.dob?(new Date(w.at)-new Date(b.dob))/(86400000*30.4375):null;
+    const pct=(sexKnown&&am!=null)?weightPercentile(b.sex,am,w.weight_kg).pct:null;
+    return `<div class="row" style="background:var(--cream)"><span style="font-weight:700; font-size:13px">${w.weight_kg} kg</span><span style="font-size:13px; color:var(--mute)">${fmtDate(w.at)}</span>${pct!=null?`<span style="margin-left:auto; font-size:12px; color:var(--mute)">${pct}th pct</span>`:'<span style="margin-left:auto"></span>'}<button data-delw="${w.id}" style="border:none; background:transparent; color:var(--mute); font-size:15px">&times;</button></div>`;
+  }).join("")}</div>`:`<div style="color:var(--mute); font-size:13px; padding:8px 0">No weights recorded yet.</div>`;
+  return `${picker}
+    <div class="card" style="border-top:4px solid ${slotOf(b).hex}">
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px">
+        <div class="fr" style="font-size:20px; font-weight:600; color:${slotOf(b).ink}">${esc(b.name)} &middot; Growth</div>
+        <button id="addWeight" class="btn-primary tap" style="background:${slotOf(b).hex}; padding:9px 14px">+ Weight</button>
+      </div>
+      ${latest}
+      <div class="chart-box" style="height:260px"><canvas id="cGrowth"></canvas></div>
+      <div style="font-weight:800; font-size:14px; margin:14px 0 4px">History</div>${list}
+      <p class="disc" style="margin-top:12px">WHO Child Growth Standards (weight-for-age, 0-24 mo) - the reference used in India for under-5s. Percentiles show where your baby sits among healthy peers; steady tracking along a band matters more than any single reading. Not medical advice.</p>
+    </div>`;
+}
+function pctNote(pct){ if(pct<3) return "Below the typical range - worth discussing with your pediatrician."; if(pct<15) return "On the lower side of normal."; if(pct>97) return "Above the typical range - worth discussing with your pediatrician."; if(pct>85) return "On the higher side of normal."; return "Within the typical range."; }
+function wireGrowth(){
+  document.querySelectorAll("[data-growthbaby]").forEach(b=>b.addEventListener("click",()=>{growthBabyId=b.dataset.growthbaby;render();}));
+  document.querySelectorAll("[data-delw]").forEach(b=>b.addEventListener("click",()=>deleteWeight(+b.dataset.delw)));
+  el("addWeight")&&el("addWeight").addEventListener("click",()=>{modal={type:"addWeight",id:growthBabyId};render();});
+  drawGrowthChart();
+}
+function drawGrowthChart(){
+  const cv=el("cGrowth"); if(!cv) return; if(charts.g){try{charts.g.destroy();}catch(e){}}
+  const b=babies.find(x=>x.id===growthBabyId); if(!b) return;
+  const sexKnown=b.sex==="boy"||b.sex==="girl"; const sex=sexKnown?b.sex:"boy";
+  const bw=weights.filter(w=>w.baby_id===b.id).sort((x,y)=>new Date(x.at)-new Date(y.at));
+  /* WHO median + 3rd/97th bands across 0-24 months */
+  const months=Array.from({length:25},(_,i)=>i);
+  const median=months.map(m=>+medianWeight(sex,m).toFixed(2));
+  const p3=months.map(m=>{ const [L,M,S]=lmsForAgeMonths(sex,m); const z=-1.881; return +(M*Math.pow(1+L*S*z,1/L)).toFixed(2); });
+  const p97=months.map(m=>{ const [L,M,S]=lmsForAgeMonths(sex,m); const z=1.881; return +(M*Math.pow(1+L*S*z,1/L)).toFixed(2); });
+  const babyPts=bw.map(w=>({x:b.dob?(new Date(w.at)-new Date(b.dob))/(86400000*30.4375):0, y:w.weight_kg}));
+  const gridC="#E8E1D4",tickC="#8A8578";
+  charts.g=new Chart(cv,{type:"line",
+    data:{labels:months, datasets:[
+      {label:"97th", data:p97, borderColor:"#D8CFBE", borderDash:[4,4], pointRadius:0, fill:false, tension:.3},
+      {label:"Median", data:median, borderColor:"#B9AE97", pointRadius:0, fill:false, tension:.3},
+      {label:"3rd", data:p3, borderColor:"#D8CFBE", borderDash:[4,4], pointRadius:0, fill:false, tension:.3},
+      {label:b.name, data:babyPts, borderColor:slotOf(b).hex, backgroundColor:slotOf(b).hex, pointRadius:5, showLine:true, tension:.2},
+    ]},
+    options:{responsive:true,maintainAspectRatio:false,parsing:true,
+      plugins:{legend:{labels:{font:{family:"Nunito",size:12},color:"#33302A",boxWidth:14}}},
+      scales:{x:{type:"linear",min:0,max:24,title:{display:true,text:"Age (months)",color:tickC,font:{size:11}},grid:{color:gridC},ticks:{color:tickC,font:{size:11},stepSize:3}},
+              y:{title:{display:true,text:"Weight (kg)",color:tickC,font:{size:11}},grid:{color:gridC},ticks:{color:tickC,font:{size:11}}}}}
+  });
+}
+
+/* ================================================================ DOCTOR SUMMARY */
+function viewSummary(){
+  if(babies.length===0) return `<div class="card" style="text-align:center; padding:40px; color:var(--mute)">Add a baby first (More tab).</div>`;
+  summaryBabyId=summaryBabyId&&babies.find(b=>b.id===summaryBabyId)?summaryBabyId:babies[0].id;
+  const picker=babies.length>1?`<div class="noprint" style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:14px">${babies.map(b=>`<button class="chip tap ${b.id===summaryBabyId?"on":""}" data-sumbaby="${b.id}">${esc(b.name)}</button>`).join("")}</div>`:"";
+  const b=babies.find(x=>x.id===summaryBabyId); const a=analyticsFor(); const d=a.per[b.id];
+  const ad=ageDays(b.dob), am=ageMonths(b.dob), w=parseFloat(b.weight_kg);
+  const nTyp=!isNaN(w)?Math.round(w*ML_PER_KG.typical):null;
+  const sn=ad!=null?sleepNormFor(ad):null, dn=ad!=null?diaperNormFor(ad):null;
+  const range=a.days.length?fmtDate(a.days[0])+" - "+fmtDate(a.days[a.days.length-1]):"no data yet";
+  const bw=weights.filter(x=>x.baby_id===b.id).sort((x,y)=>new Date(x.at)-new Date(y.at));
+  const sexKnown=b.sex==="boy"||b.sex==="girl";
+  let wLine="-", pctLine="";
+  if(bw.length){ const last=bw[bw.length-1]; wLine=last.weight_kg+" kg ("+fmtDate(last.at)+")";
+    if(sexKnown){ const m=(new Date(last.at)-new Date(b.dob))/(86400000*30.4375); pctLine=weightPercentile(b.sex,m,last.weight_kg).pct+"th pct"; } }
+  const nv=nextVisit(b.dob);
+  const visitLine=nv?`${nv.label} visit around ${nv.dueDate.toLocaleDateString()}`:"schedule complete for <2y";
+  const line=(l,v,ref)=>`<div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid #f0ece2"><span style="color:var(--mute); font-weight:700">${l}</span><span style="font-weight:700; text-align:right">${v}${ref?` <span style="color:var(--mute); font-weight:600">(${ref})</span>`:""}</span></div>`;
+  const rows=a.days.length?a.days.slice(-14).map(dk=>{const x=d.byDay[dk];return `<tr><td style="padding:5px 8px; border-bottom:1px solid #eee">${fmtDate(dk)}</td><td style="padding:5px 8px; border-bottom:1px solid #eee; text-align:right">${x.feeds}</td><td style="padding:5px 8px; border-bottom:1px solid #eee; text-align:right">${x.ml||0}</td><td style="padding:5px 8px; border-bottom:1px solid #eee; text-align:right">${fmtHrs(x.sleepMin)}</td><td style="padding:5px 8px; border-bottom:1px solid #eee; text-align:right">${x.wet}</td><td style="padding:5px 8px; border-bottom:1px solid #eee; text-align:right">${x.dirty}</td></tr>`;}).join(""):"";
+  return `${picker}
+    <div class="noprint" style="display:flex; justify-content:flex-end; margin-bottom:10px"><button id="printSummary" class="btn-primary tap" style="background:var(--green); padding:10px 18px">&#128424; Print / Save as PDF</button></div>
+    <div class="card" id="summarySheet">
+      <div style="display:flex; justify-content:space-between; align-items:baseline; flex-wrap:wrap; gap:8px; border-bottom:2px solid var(--ink); padding-bottom:10px; margin-bottom:14px">
+        <div><div class="fr" style="font-size:24px; font-weight:600">${esc(b.name)} - Care Summary</div><div style="color:var(--mute); font-size:13px">Pediatric follow-up &middot; ${new Date().toLocaleDateString()}</div></div>
+        <div style="text-align:right; font-size:13px; color:var(--mute)">Data range<br><b style="color:var(--ink)">${range}</b></div>
+      </div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:20px">
+        <div><div style="font-weight:800; margin-bottom:6px">Baby</div>
+          ${line("Age", ad!=null?ad+" days ("+(am?am.toFixed(1):"-")+" mo)":"-")}
+          ${line("Sex", b.sex==="unknown"?"-":b.sex)}
+          ${line("Weight", wLine, pctLine)}
+          <div style="font-weight:800; margin:14px 0 6px">Feeding (daily avg)</div>
+          ${line("Milk", d.avgDailyMl?d.avgDailyMl+" ml":"-", nTyp?"~"+nTyp:"")}
+          ${line("Feeds", d.avgFeeds?d.avgFeeds.toFixed(1):"-")}
+          ${line("Breastfed", d.breastPct!=null?d.breastPct+"% of feeds":"-")}
+        </div>
+        <div><div style="font-weight:800; margin-bottom:6px">Sleep (daily avg)</div>
+          ${line("Total", d.avgSleepMin?fmtHrs(d.avgSleepMin):"-", sn?sn.lo+"-"+sn.hi+"h":"")}
+          ${line("Night", d.avgNightMin?fmtHrs(d.avgNightMin):"-")}
+          <div style="font-weight:800; margin:14px 0 6px">Diapers (daily avg)</div>
+          ${line("Total", d.avgDiapers?d.avgDiapers.toFixed(1):"-", dn?dn.lo+"-"+dn.hi:"")}
+          ${line("Wet", d.avgWet?d.avgWet.toFixed(1):"-")}
+          <div style="font-weight:800; margin:14px 0 6px">Next visit</div>
+          ${line("Well-baby", visitLine)}
+        </div>
+      </div>
+      ${a.days.length?`<div style="font-weight:800; margin:18px 0 8px">Last ${Math.min(14,a.days.length)} days</div>
+      <table style="width:100%; border-collapse:collapse; font-size:13px"><thead><tr style="text-align:right; color:var(--mute)"><th style="padding:5px 8px; text-align:left">Date</th><th style="padding:5px 8px">Feeds</th><th style="padding:5px 8px">ml</th><th style="padding:5px 8px">Sleep</th><th style="padding:5px 8px">Wet</th><th style="padding:5px 8px">Dirty</th></tr></thead><tbody>${rows}</tbody></table>`:""}
+      <p class="disc" style="margin-top:16px">Generated from caregiver-entered logs. Ranges are WHO/AAP population references, not diagnostic thresholds. Not a medical device.</p>
+    </div>`;
+}
+function wireSummary(){
+  document.querySelectorAll("[data-sumbaby]").forEach(b=>b.addEventListener("click",()=>{summaryBabyId=b.dataset.sumbaby;render();}));
+  el("printSummary")&&el("printSummary").addEventListener("click",()=>window.print());
+}
+
+/* ================================================================ MORE (babies, prescriptions, settings, ask) */
+function viewMore(){
+  const gap=currentHousehold().alert_gap_min||180; const gaps=[90,120,150,180,210,240];
+  const babyCards=babies.map(b=>{ const sl=slotOf(b); const d=ageDays(b.dob);
+    return `<div class="card" style="border-top:4px solid ${sl.hex}">
+      <div style="display:flex; align-items:center; gap:8px; margin-bottom:10px"><span class="dot" style="background:${sl.hex}"></span>
+        <input class="inp" data-baby="${b.id}|name" value="${esc(b.name)}" style="font-weight:700; padding:6px 8px; font-family:'Fraunces',serif; font-size:18px; border-color:transparent; background:transparent" />
+        <button data-editbaby="${b.id}" class="btn-ghost tap" style="padding:6px 10px">Edit</button></div>
+      <label class="lbl">Date of birth</label><input class="inp" type="date" data-baby="${b.id}|dob" value="${b.dob||""}" />
+      <div style="display:flex; gap:10px; margin-top:10px">
+        <div style="flex:1"><label class="lbl">Sex</label>
+          <select class="inp" data-baby="${b.id}|sex"><option value="unknown" ${b.sex==="unknown"?"selected":""}>-</option><option value="boy" ${b.sex==="boy"?"selected":""}>Boy</option><option value="girl" ${b.sex==="girl"?"selected":""}>Girl</option></select></div>
+        <div style="flex:1"><label class="lbl">Latest weight (kg)</label><input class="inp" type="number" inputmode="decimal" step="0.01" data-baby="${b.id}|weight_kg" value="${b.weight_kg??""}" /></div>
+      </div>
+      ${d!=null?`<div style="font-size:12px; color:var(--mute); margin-top:8px">${d} days old</div>`:""}
+    </div>`;
+  }).join("");
+  const addBtn=babies.length<4?`<button id="addBaby" class="card tap" style="border:2px dashed var(--line); background:transparent; color:var(--mute); font-weight:800; font-size:15px; min-height:120px">+ Add a baby</button>`:`<div class="card" style="color:var(--mute); font-size:13px; display:flex; align-items:center; justify-content:center">Up to 4 babies.</div>`;
+  const scriptList=scripts.length?scripts.map(s=>{const b=babies.find(x=>x.id===s.baby_id);return `<div class="row" style="background:var(--cream)"><span style="font-size:15px">&#128196;</span><span style="font-weight:700; font-size:13px">${esc(s.title||"Prescription")}</span>${b?`<span style="font-size:12px; color:var(--mute)">${esc(b.name)}</span>`:""}<span style="font-size:12px; color:var(--mute)">${fmtDate(s.at)}</span><button data-viewrx="${esc(s.storage_path)}" class="chip tap" style="margin-left:auto; padding:4px 10px">View</button><button data-delrx="${s.id}" style="border:none; background:transparent; color:var(--mute); font-size:15px">&times;</button></div>`;}).join(""):`<div style="color:var(--mute); font-size:13px; padding:8px 0">No prescriptions uploaded yet.</div>`;
+  return `
+    <section class="card" style="margin-bottom:14px">
+      <div style="font-weight:800; font-size:16px; margin-bottom:4px">Ask about your data</div>
+      <p class="sub" style="margin:0 0 12px">Answered on your device from this profile's logs.</p>
+      <div style="display:flex; gap:8px"><input id="askInput" class="inp" placeholder="e.g. sleep today?" /><button id="askBtn" class="btn-primary tap" style="background:var(--green); padding:12px 18px">Ask</button></div>
+      <div id="askAnswer" style="margin-top:12px; background:var(--cream); border-radius:12px; padding:14px; font-size:14px; font-weight:600; min-height:44px; line-height:1.5">Ask "last feed", "sleep today", "diapers today", or "how is ${babies[0]?esc(babies[0].name):"baby"} vs standard".</div>
+    </section>
+
+    <section class="card" style="margin-bottom:14px">
+      <div style="font-weight:800; font-size:16px; margin-bottom:4px">Prescriptions</div>
+      <p class="sub" style="margin:0 0 12px">Photograph and store prescriptions in one place. Stored privately; opens the original image when you tap View.</p>
+      <button id="addRx" class="btn-primary tap" style="background:var(--green); width:100%; margin-bottom:10px">&#128247; Upload a prescription</button>
+      ${scriptList}
+      <p class="disc" style="margin-top:10px">Storage only - the app does not read or transcribe the text. Always follow the written prescription and your doctor's instructions.</p>
+    </section>
+
+    <section class="card" style="margin-bottom:14px">
+      <div style="font-weight:800; font-size:16px; margin-bottom:8px">Feed reminder</div>
+      <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:12px">${gaps.map(g=>`<button class="chip tap ${gap===g?"on":""}" data-gap="${g}">${fmtDur(g)}</button>`).join("")}
+        <button id="notify" class="chip tap" style="color:var(--mute)">&#128276; Enable alerts</button></div>
+      <label style="display:flex; align-items:center; gap:10px; cursor:pointer"><input id="autoRemindChk" type="checkbox" ${autoRemindOn()?"checked":""} style="width:22px; height:22px; accent-color:var(--green)" />
+        <div><div style="font-weight:800; font-size:14px">Auto-add phone reminder after each feed</div><div style="color:var(--mute); font-size:12px">Saving a feed prepares the next calendar reminder. This device only.</div></div></label>
+    </section>
+
+    <div style="font-weight:800; font-size:16px; margin:0 4px 10px">Babies</div>
+    <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(300px,1fr))">${babyCards}${addBtn}</div>
+    <p class="disc" style="margin:14px 4px 0">Reference figures follow WHO/AAP guidance. Not medical advice - your pediatrician's checks are the real guide.</p>`;
+}
+function wireMore(){
+  const run=()=>{el("askAnswer").textContent=assistantAnswer(el("askInput").value);};
+  el("askBtn").addEventListener("click",run); el("askInput").addEventListener("keydown",e=>{if(e.key==="Enter")run();});
+  document.querySelectorAll("[data-baby]").forEach(inp=>inp.addEventListener("change",()=>{const[id,field]=inp.dataset.baby.split("|");const val=field==="name"?(inp.value.trim()||"Baby"):inp.value;saveBaby(id,{[field]:val});}));
+  el("addBaby")&&el("addBaby").addEventListener("click",()=>{modal={type:"newBaby"};render();});
+  document.querySelectorAll("[data-editbaby]").forEach(b=>b.addEventListener("click",()=>{modal={type:"editBaby",id:b.dataset.editbaby};render();}));
+  el("addRx")&&el("addRx").addEventListener("click",()=>{modal={type:"addRx"};render();});
+  document.querySelectorAll("[data-viewrx]").forEach(b=>b.addEventListener("click",()=>viewPrescription(b.dataset.viewrx)));
+  document.querySelectorAll("[data-delrx]").forEach(b=>b.addEventListener("click",()=>{const row=scripts.find(s=>s.id==b.dataset.delrx); if(row&&confirm("Delete this prescription?"))deletePrescription(row);}));
+  document.querySelectorAll("[data-gap]").forEach(b=>b.addEventListener("click",()=>updateGap(+b.dataset.gap)));
+  el("notify")&&el("notify").addEventListener("click",askNotify);
+  const ar=el("autoRemindChk"); if(ar) ar.addEventListener("change",()=>setAutoRemind(ar.checked));
+}
+
+/* ================================================================ Assistant */
+function assistantAnswer(qRaw){
+  const q=(qRaw||"").toLowerCase().trim(); if(!q) return "Ask about feeds, sleep, or diapers.";
+  let baby=babies.find(b=>q.includes(b.name.toLowerCase())); const one=baby||(babies.length===1?babies[0]:null);
+  const nameOf=b=>b?b.name:""; const today=dayKey(new Date().toISOString()); const a=analyticsFor();
+  const lastOf=(arr,k)=>arr.length?arr.reduce((x,y)=>new Date(x[k])>new Date(y[k])?x:y):null;
+  if(q.includes("last")&&q.includes("feed")){ const list=feeds.filter(f=>!one||f.baby_id===one.id); const last=lastOf(list,"endISO"); if(!last)return "No feeds logged yet."; const b=babies.find(x=>x.id===last.baby_id); const mins=(Date.now()-new Date(last.endISO))/60000; return `${nameOf(b)} last fed at ${fmtTime(last.endISO)} (${fmtDur(mins)} ago)${last.ml!=null?", "+last.ml+" ml":", "+FEED_LABEL[last.feed_type].toLowerCase()}.`; }
+  if(q.includes("last")&&(q.includes("diaper")||q.includes("nappy"))){ const list=diapers.filter(d=>!one||d.baby_id===one.id); const last=lastOf(list,"atISO"); if(!last)return "No diaper changes yet."; const b=babies.find(x=>x.id===last.baby_id); return `${nameOf(b)}'s last change was ${last.kind} at ${fmtTime(last.atISO)}.`; }
+  if(q.includes("sleep")){ const t=one?[one]:babies; return t.map(b=>{const d=a.per[b.id],x=d&&d.byDay[today],mins=x?x.sleepMin:0,ad=ageDays(b.dob),nm=ad!=null?sleepNormFor(ad):null;return `${nameOf(b)}: ${fmtHrs(mins)} today${nm?` (guide ${nm.lo}-${nm.hi}h)`:""}.`;}).join(" "); }
+  if(q.includes("diaper")||q.includes("nappy")){ const t=one?[one]:babies; return t.map(b=>{const d=a.per[b.id],x=d&&d.byDay[today];return `${nameOf(b)}: ${(x?x.wet+x.dirty:0)} changes today (${x?x.wet:0} wet, ${x?x.dirty:0} dirty).`;}).join(" "); }
+  if(q.includes("weight")||q.includes("percentile")||q.includes("growth")){ const t=one?[one]:babies; return t.map(b=>{const bw=weights.filter(w=>w.baby_id===b.id);if(!bw.length)return `${nameOf(b)}: no weight recorded.`;const last=bw[bw.length-1];const sk=b.sex==="boy"||b.sex==="girl";if(!sk)return `${nameOf(b)}: ${last.weight_kg} kg (set sex for percentile).`;const m=(new Date(last.at)-new Date(b.dob))/(86400000*30.4375);return `${nameOf(b)}: ${last.weight_kg} kg, ${weightPercentile(b.sex,m,last.weight_kg).pct}th percentile.`;}).join(" "); }
+  if(q.includes("feed")||q.includes("milk")||q.includes("ml")){ const t=one?[one]:babies; return t.map(b=>{const d=a.per[b.id],x=d&&d.byDay[today];return `${nameOf(b)}: ${x?x.feeds:0} feeds, ${x?x.ml:0} ml today.`;}).join(" "); }
+  if(q.includes("standard")||q.includes("normal")||q.includes("compare")||q.includes("track")){ const t=one?[one]:babies; return t.map(b=>{const d=a.per[b.id],w=parseFloat(b.weight_kg),ad=ageDays(b.dob),p=[];if(!isNaN(w)&&d.avgDailyMl){const ty=Math.round(w*ML_PER_KG.typical);p.push(`milk ${d.avgDailyMl}/${ty}ml (${Math.round(d.avgDailyMl/ty*100)}%)`);}if(ad!=null&&d.avgSleepMin){const nm=sleepNormFor(ad);p.push(`sleep ${fmtHrs(d.avgSleepMin)} vs ${nm.lo}-${nm.hi}h`);}if(ad!=null&&d.avgDiapers){const nd=diaperNormFor(ad);p.push(`diapers ${d.avgDiapers.toFixed(1)} vs ${nd.lo}-${nd.hi}`);}return `${nameOf(b)}: ${p.length?p.join("; "):"not enough data"}.`;}).join(" "); }
+  return "Try: \"last feed\", \"sleep today\", \"diapers today\", \"weight\", or \"vs standard\".";
+}
+
+/* ================================================================ Modals */
+function modalHTML(){
+  if(modal.type==="breastSide"){ const b=babies.find(x=>x.id===modal.id)||{name:"Baby",color:"A"}; const sl=slotOf(b);
+    return `<div class="sheet-bg" id="modalBg"><div class="sheet">
+      <div class="fr" style="font-size:20px; font-weight:600; margin-bottom:4px">${esc(b.name)} &middot; Breastfeed</div>
+      <p style="color:var(--mute); font-size:13px; margin:0 0 14px">Which side? (optional - tap Start to skip)</p>
+      <div style="display:flex; gap:10px; margin-bottom:14px">
+        <button data-side="L" class="btn-ghost tap" style="flex:1; padding:16px">Left</button>
+        <button data-side="R" class="btn-ghost tap" style="flex:1; padding:16px">Right</button></div>
+      <button data-side="" class="btn-primary tap" style="width:100%; background:${sl.hex}">Start breastfeed</button>
+    </div></div>`;
+  }
+  if(modal.type==="addWeight"){ const b=babies.find(x=>x.id===modal.id)||{name:"Baby"};
+    return `<div class="sheet-bg" id="modalBg"><div class="sheet">
+      <div class="fr" style="font-size:20px; font-weight:600; margin-bottom:12px">${esc(b.name)} &middot; Add weight</div>
+      <label class="lbl">Date</label><input id="wDate" class="inp" type="date" value="${new Date().toISOString().slice(0,10)}" />
+      <label class="lbl" style="margin-top:12px">Weight (kg)</label><input id="wKg" class="inp" type="number" inputmode="decimal" step="0.01" placeholder="e.g. 4.20" />
+      <div style="display:flex; gap:10px; margin-top:18px"><button id="mCancel" class="tap" style="flex:1; border:1px solid var(--line); background:var(--paper); border-radius:12px; padding:12px; font-weight:700; color:var(--mute)">Cancel</button><button id="wSave" class="btn-primary tap" style="flex:2; background:var(--green)">Save</button></div>
+    </div></div>`;
+  }
+  if(modal.type==="addRx"){
+    const opts=babies.map(b=>`<option value="${b.id}">${esc(b.name)}</option>`).join("");
+    return `<div class="sheet-bg" id="modalBg"><div class="sheet">
+      <div class="fr" style="font-size:20px; font-weight:600; margin-bottom:12px">Upload prescription</div>
+      <label class="lbl">Photo or file</label><input id="rxFile" class="inp" type="file" accept="image/*,application/pdf" capture="environment" />
+      <label class="lbl" style="margin-top:12px">Title</label><input id="rxTitle" class="inp" placeholder="e.g. Dr. Sharma - 12 Aug" />
+      ${babies.length?`<label class="lbl" style="margin-top:12px">For baby (optional)</label><select id="rxBaby" class="inp"><option value="">- none / general -</option>${opts}</select>`:""}
+      <label class="lbl" style="margin-top:12px">Note (optional)</label><textarea id="rxNote" class="inp" rows="2" placeholder="Anything to remember"></textarea>
+      <div style="display:flex; gap:10px; margin-top:18px"><button id="mCancel" class="tap" style="flex:1; border:1px solid var(--line); background:var(--paper); border-radius:12px; padding:12px; font-weight:700; color:var(--mute)">Cancel</button><button id="rxSave" class="btn-primary tap" style="flex:2; background:var(--green)">Upload</button></div>
+      <p class="disc" style="margin-top:10px">Stored privately in your account. The app keeps the image; it does not transcribe it.</p>
+    </div></div>`;
+  }
+  if(modal.type==="newHousehold") return simpleModal("New profile",`<label class="lbl">Profile name</label><input id="mName" class="inp" placeholder="e.g. Grandma's house" />`,"Create");
+  if(modal.type==="manageHousehold"){ const h=currentHousehold(); return simpleModal("Manage profile",`<label class="lbl">Rename</label><input id="mName" class="inp" value="${esc(h.name)}" /><button id="mDelete" class="tap" style="width:100%; margin-top:16px; border:1px solid #E7C9C4; background:#FBEEEC; color:#8A2B22; border-radius:12px; padding:11px; font-weight:800">Delete this profile</button><p class="disc" style="margin-top:8px">Removes this profile and all its data.</p>`,"Save"); }
+  if(modal.type==="newBaby"){ const used=babies.map(b=>b.color); const free=["A","B","C","D"].find(c=>!used.includes(c))||"A"; return simpleModal("Add a baby",`<label class="lbl">Name</label><input id="mName" class="inp" placeholder="e.g. Seher" /><label class="lbl" style="margin-top:12px">Sex</label><select id="mSex" class="inp"><option value="unknown">-</option><option value="boy">Boy</option><option value="girl">Girl</option></select><label class="lbl" style="margin-top:12px">Colour</label>${colorPicker(free)}`,"Add"); }
+  if(modal.type==="editBaby"){ const b=babies.find(x=>x.id===modal.id)||{name:"",color:"A",sex:"unknown"}; return simpleModal("Edit baby",`<label class="lbl">Name</label><input id="mName" class="inp" value="${esc(b.name)}" /><label class="lbl" style="margin-top:12px">Sex</label><select id="mSex" class="inp"><option value="unknown" ${b.sex==="unknown"?"selected":""}>-</option><option value="boy" ${b.sex==="boy"?"selected":""}>Boy</option><option value="girl" ${b.sex==="girl"?"selected":""}>Girl</option></select><label class="lbl" style="margin-top:12px">Colour</label>${colorPicker(b.color)}<button id="mRemove" class="tap" style="width:100%; margin-top:16px; border:1px solid #E7C9C4; background:#FBEEEC; color:#8A2B22; border-radius:12px; padding:11px; font-weight:800">Remove baby</button>`,"Save"); }
+  return "";
+}
+function colorPicker(sel){ return `<div id="mColors" style="display:flex; gap:8px">`+["A","B","C","D"].map(c=>`<button data-color="${c}" class="tap" style="flex:1; height:42px; border-radius:10px; border:3px solid ${c===sel?"var(--ink)":"transparent"}; background:${SLOTS[c].hex}"></button>`).join("")+`</div><input type="hidden" id="mColor" value="${sel}" />`; }
+function simpleModal(title,inner,ok){ return `<div class="sheet-bg" id="modalBg"><div class="sheet"><div class="fr" style="font-size:20px; font-weight:600; margin-bottom:12px">${title}</div>${inner}<div style="display:flex; gap:10px; margin-top:18px"><button id="mCancel" class="tap" style="flex:1; border:1px solid var(--line); background:var(--paper); border-radius:12px; padding:12px; font-weight:700; color:var(--mute)">Cancel</button><button id="mOk" class="btn-primary tap" style="flex:2; background:var(--green)">${ok}</button></div></div></div>`; }
+function wireModal(){
+  const close=()=>{modal=null;render();};
+  el("modalBg").addEventListener("click",e=>{if(e.target.id==="modalBg")close();});
+  el("mCancel")&&el("mCancel").addEventListener("click",close);
+  const nameEl=el("mName"); if(nameEl) nameEl.focus();
+  document.querySelectorAll("[data-color]").forEach(btn=>btn.addEventListener("click",()=>{el("mColor").value=btn.dataset.color;document.querySelectorAll("[data-color]").forEach(x=>x.style.borderColor="transparent");btn.style.borderColor="var(--ink)";}));
+  document.querySelectorAll("[data-side]").forEach(btn=>btn.addEventListener("click",()=>{ const id=modal.id; modal=null; startBreast(id, btn.dataset.side||null); }));
+  el("wSave")&&el("wSave").addEventListener("click",()=>{ const kg=parseFloat(el("wKg").value); const dt=el("wDate").value; if(isNaN(kg)){alert("Enter a weight.");return;} addWeight(modal.id, dt, kg); });
+  el("rxSave")&&el("rxSave").addEventListener("click",()=>{ const f=el("rxFile").files[0]; if(!f){alert("Choose a photo or file.");return;} uploadPrescription(el("rxBaby")?el("rxBaby").value:null, f, el("rxTitle").value.trim(), el("rxNote").value.trim()); });
+  el("mOk")&&el("mOk").addEventListener("click",async()=>{
+    if(modal.type==="newHousehold") await createHousehold(el("mName").value.trim());
+    else if(modal.type==="manageHousehold"){ const name=el("mName").value.trim()||currentHousehold().name; const h=currentHousehold(); h.name=name; await sb.from("households").update({name}).eq("id",currentHid); modal=null; render(); }
+    else if(modal.type==="newBaby") await addBaby(el("mName").value.trim(), el("mColor").value, el("mSex").value);
+    else if(modal.type==="editBaby"){ await saveBaby(modal.id,{name:el("mName").value.trim()||"Baby",color:el("mColor").value,sex:el("mSex").value}); modal=null; render(); }
+  });
+  const del=el("mDelete"); if(del) del.addEventListener("click",async()=>{ if(!confirm("Delete this whole profile and everything in it?"))return; await sb.from("households").delete().eq("id",currentHid); households=households.filter(h=>h.id!==currentHid); currentHid=households[0]?households[0].id:null; modal=null; if(currentHid) startApp(); else renderPicker(); });
+  const rem=el("mRemove"); if(rem) rem.addEventListener("click",()=>{ if(confirm("Remove this baby and their logs?")) removeBaby(modal.id); });
+}
+
+/* ---------- go ---------- */
+if(window.supabase && window.supabase.createClient) boot();
+else window.addEventListener("load", boot);
+</script>
+</body>
+</html>
